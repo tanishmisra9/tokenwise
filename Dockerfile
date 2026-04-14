@@ -27,4 +27,4 @@ COPY .env.example .env.example
 
 EXPOSE 8000
 
-CMD ["/bin/sh", "-c", "uv run uvicorn tokenwise.backend.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "-c", "uv run uvicorn tokenwise.backend.main:app --host 0.0.0.0 --port $PORT"]
