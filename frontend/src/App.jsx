@@ -19,6 +19,45 @@ const initialRunState = {
   error: "",
 };
 
+function markFailedSubtask(subtasks) {
+  const entries = Object.entries(subtasks ?? {});
+  if (!entries.length) {
+    return subtasks;
+  }
+
+  const runningEntry = entries.find(([, subtask]) => subtask.status === "running");
+  const fallbackEntry =
+    [...entries]
+      .filter(([, subtask]) => subtask.status !== "completed" && (subtask.attempts?.length ?? 0) > 0)
+      .sort(([, left], [, right]) => {
+        const leftAttempt = left.attempts?.at(-1)?.attempt_number ?? -1;
+        const rightAttempt = right.attempts?.at(-1)?.attempt_number ?? -1;
+        return rightAttempt - leftAttempt;
+      })[0] ?? null;
+
+  const failedEntry = runningEntry ?? fallbackEntry;
+  if (!failedEntry) {
+    return subtasks;
+  }
+
+  const [subtaskId, failedSubtask] = failedEntry;
+  return {
+    ...subtasks,
+    [subtaskId]: {
+      ...failedSubtask,
+      status: "failed",
+      attempts: (failedSubtask.attempts ?? []).map((attempt, index, attempts) =>
+        index === attempts.length - 1
+          ? {
+              ...attempt,
+              status: "failed",
+            }
+          : attempt,
+      ),
+    },
+  };
+}
+
 function buildWebSocketUrl(runId) {
   const url = new URL(`/runs/${runId}`, API_BASE_URL);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
@@ -134,6 +173,7 @@ function eventReducer(previous, event) {
   if (event.event === "run_failed") {
     next.status = "failed";
     next.error = payload.error ?? "Run failed.";
+    next.subtasks = markFailedSubtask(next.subtasks);
     next.runStats = payload.run_stats ?? null;
     next.historyStats = payload.history_stats ?? null;
     return next;

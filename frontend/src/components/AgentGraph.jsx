@@ -1,10 +1,22 @@
-import { useRef } from "react";
-
 function statusTone(status) {
   if (status === "completed") return "tone-success";
   if (status === "running") return "tone-live";
   if (status === "failed") return "tone-danger";
   return "tone-muted";
+}
+
+function formatStatusLabel(status) {
+  if (!status) {
+    return "QUEUED";
+  }
+  return status.toUpperCase();
+}
+
+function formatComplexityLabel(complexity) {
+  if (complexity === "low") return "Low";
+  if (complexity === "medium") return "Med";
+  if (complexity === "high") return "High";
+  return complexity;
 }
 
 function truncateLabel(description) {
@@ -17,17 +29,6 @@ function truncateLabel(description) {
 
 export default function AgentGraph({ run }) {
   const subtasks = run.plan ?? [];
-  const scrollRef = useRef(null);
-
-  function scrollToLatest() {
-    if (!scrollRef.current) {
-      return;
-    }
-    scrollRef.current.scrollTo({
-      top: scrollRef.current.scrollHeight,
-      behavior: "smooth",
-    });
-  }
 
   return (
     <div className="agent-graph">
@@ -42,13 +43,14 @@ export default function AgentGraph({ run }) {
         </div>
       ) : (
         <div className="subtask-stack">
-          <div className="subtask-scroll-region" ref={scrollRef}>
+          <div className="subtask-scroll-region">
             <div className="subtask-list">
               {subtasks.map((subtask, index) => {
                 const liveState = run.subtasks?.[subtask.id] ?? {};
                 const attempts = liveState.attempts ?? [];
                 const route = liveState.route;
                 const latestAttempt = attempts.at(-1);
+                const modelLabel = latestAttempt?.model_id ?? route?.model_id ?? "Pending";
 
                 return (
                   <article className={`subtask-card ${statusTone(liveState.status)}`} key={subtask.id}>
@@ -59,15 +61,13 @@ export default function AgentGraph({ run }) {
                           <p className="subtask-id">{subtask.id}</p>
                           <h3 title={subtask.description}>{truncateLabel(subtask.description)}</h3>
                         </div>
-                        <span className="status-pill">{liveState.status ?? "queued"}</span>
+                        <span className="status-pill">{formatStatusLabel(liveState.status ?? "queued")}</span>
                       </div>
 
                       <div className="subtask-meta">
-                        <span>{subtask.complexity}</span>
-                        <span>{subtask.output_format}</span>
-                        <span>{subtask.routing_hint}</span>
-                        {route ? <span>{route.provider} · Tier {route.tier}</span> : null}
+                        <span title={modelLabel}>{modelLabel}</span>
                         <span>Attempt {latestAttempt?.attempt_number ?? 0}</span>
+                        <span>{formatComplexityLabel(subtask.complexity)}</span>
                       </div>
                     </div>
                   </article>
@@ -75,10 +75,6 @@ export default function AgentGraph({ run }) {
               })}
             </div>
           </div>
-
-          <button className="show-more-button" type="button" onClick={scrollToLatest}>
-            Show more ↓
-          </button>
         </div>
       )}
     </div>
