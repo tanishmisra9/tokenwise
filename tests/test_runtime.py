@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
+from tokenwise.backend.execution.runner import LLMRunner
 from tokenwise.backend.models.schemas import (
     Complexity,
     LLMResponse,
@@ -398,3 +399,105 @@ async def test_timeout_on_tier_one_triggers_provider_fallback(
     assert fallback_events
     assert [event.event.value for event in events][-1] == "run_completed"
 
+
+@pytest.mark.asyncio
+async def test_empty_runner_output_retries_once_without_triggering_escalation(
+    coordinator_factory,
+    mock_settings,
+    llm_response_factory,
+    subtask_factory,
+    plan_factory,
+):
+    plan = plan_factory(
+        [
+            subtask_factory(id="task_1", complexity=Complexity.LOW, routing_hint=RoutingHint.GENERAL_REASONING),
+            subtask_factory(id="task_2", complexity=Complexity.LOW, depends_on=["task_1"]),
+            subtask_factory(id="task_3", complexity=Complexity.LOW, depends_on=["task_2"]),
+        ]
+    )
+    runner = LLMRunner(mock_settings())
+    runner._call_openai = AsyncMock(
+        side_effect=[
+            llm_response_factory("   "),
+            llm_response_factory("task_1 recovered"),
+            llm_response_factory("task_2 recovered"),
+            llm_response_factory("task_3 recovered"),
+        ]
+    )
+    runner._call_anthropic = AsyncMock()
+    orchestrator = Mock()
+    orchestrator.create_plan = AsyncMock(return_value=plan)
+    validator = Mock()
+    validator.validate = AsyncMock(return_value=ValidationResult(passed=True, reason="Looks good."))
+    composer = Mock()
+    composer.compose = AsyncMock(return_value="Recovered output")
+    coordinator = coordinator_factory(
+        settings=mock_settings(),
+        runner=runner,
+        orchestrator=orchestrator,
+        validator=validator,
+        composer=composer,
+    )
+
+    await coordinator.run("run_empty_retry", RunRequest(task="Recover from transient empty output."))
+
+    events = backlog_events(coordinator, "run_empty_retry")
+    escalation_events = [event for event in events if event.event.value == "subtask_escalated"]
+
+    assert [event.event.value for event in events][-1] == "run_completed"
+    assert not escalation_events
+    assert runner._call_openai.await_count == 4
+    composed_results = composer.compose.await_args.args[1]
+    assert composed_results[0].final_output == "task_1 recovered"
+
+
+@pytest.mark.asyncio
+async def test_tier_three_subtasks_use_configured_max_output_tokens(
+    coordinator_factory,
+    mock_settings,
+    subtask_factory,
+    plan_factory,
+):
+    plan = plan_factory(
+        [
+            subtask_factory(id="task_1", complexity=Complexity.HIGH, routing_hint=RoutingHint.GENERAL_REASONING),
+            subtask_factory(id="task_2", complexity=Complexity.LOW, depends_on=["task_1"]),
+            subtask_factory(id="task_3", complexity=Complexity.LOW, depends_on=["task_2"]),
+        ]
+    )
+    captured_tokens: list[int] = []
+
+    async def generate(**kwargs):
+        captured_tokens.append(kwargs["max_output_tokens"])
+        subtask_id = extract_subtask_id(kwargs["user_prompt"])
+        return LLMResponse(
+            output_text=f"{subtask_id} done",
+            usage=TokenUsage(input=100, output=50),
+            latency_ms=75,
+        )
+
+    runner = Mock()
+    runner.generate = AsyncMock(side_effect=generate)
+    orchestrator = Mock()
+    orchestrator.create_plan = AsyncMock(return_value=plan)
+    validator = Mock()
+    validator.validate = AsyncMock(return_value=ValidationResult(passed=True, reason="Looks good."))
+    composer = Mock()
+    composer.compose = AsyncMock(return_value="Tiered output")
+    coordinator = coordinator_factory(
+        settings=mock_settings(
+            tier1_max_output_tokens=1500,
+            tier2_max_output_tokens=2000,
+            tier3_max_output_tokens=4000,
+        ),
+        runner=runner,
+        orchestrator=orchestrator,
+        validator=validator,
+        composer=composer,
+    )
+
+    await coordinator.run("run_tier_tokens", RunRequest(task="Produce long technical outputs.", quality_floor=QualityFloor.LOW))
+
+    assert captured_tokens[0] == 4000
+    assert captured_tokens[1] == 1500
+    assert captured_tokens[2] == 1500

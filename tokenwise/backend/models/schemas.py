@@ -166,7 +166,7 @@ class RunAcceptedResponse(BaseModel):
 
 class ValidationResult(BaseModel):
     passed: bool
-    reason: str
+    reason: str = ""
 
 
 class LLMResponse(BaseModel):

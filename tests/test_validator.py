@@ -93,6 +93,72 @@ async def test_structured_output_valid_json_returns_passed_validation(mock_runne
 
 
 @pytest.mark.asyncio
+async def test_passing_validation_without_reason_defaults_to_empty_string(mock_runner, llm_response_factory, subtask_factory):
+    mock_runner.queue_response(llm_response_factory('{"passed": true}'))
+    agent = ValidatorAgent(mock_runner, Provider.OPENAI, "gpt-4o-mini")
+
+    result = await agent.validate(
+        subtask_factory(),
+        "A complete answer.",
+        RoutingHint.GENERAL_REASONING,
+        OutputFormat.PARAGRAPH,
+    )
+
+    assert result.passed is True
+    assert result.reason == ""
+
+
+@pytest.mark.asyncio
+async def test_structured_output_valid_fenced_json_returns_passed_validation(
+    mock_runner,
+    llm_response_factory,
+    subtask_factory,
+):
+    mock_runner.queue_response(llm_response_factory('{"passed": true, "reason": "Valid fenced JSON and structure."}'))
+    agent = ValidatorAgent(mock_runner, Provider.OPENAI, "gpt-4o-mini")
+
+    result = await agent.validate(
+        subtask_factory(output_format=OutputFormat.JSON, routing_hint=RoutingHint.STRUCTURED_OUTPUT),
+        '```json\n{"items": ["a", "b"]}\n```',
+        RoutingHint.STRUCTURED_OUTPUT,
+        OutputFormat.JSON,
+    )
+
+    assert result.passed is True
+
+
+@pytest.mark.asyncio
+async def test_structured_output_list_accepts_markdown_bullets(mock_runner, llm_response_factory, subtask_factory):
+    mock_runner.queue_response(llm_response_factory('{"passed": true, "reason": "List structure is valid."}'))
+    agent = ValidatorAgent(mock_runner, Provider.OPENAI, "gpt-4o-mini")
+
+    result = await agent.validate(
+        subtask_factory(output_format=OutputFormat.LIST, routing_hint=RoutingHint.STRUCTURED_OUTPUT),
+        "- Spotify relies on subscriptions\n- Apple Music benefits from ecosystem bundling\n- Both face licensing pressure",
+        RoutingHint.STRUCTURED_OUTPUT,
+        OutputFormat.LIST,
+    )
+
+    assert result.passed is True
+
+
+@pytest.mark.asyncio
+async def test_structured_output_list_rejects_non_list_text_without_runner(mock_runner, subtask_factory):
+    agent = ValidatorAgent(mock_runner, Provider.OPENAI, "gpt-4o-mini")
+
+    result = await agent.validate(
+        subtask_factory(output_format=OutputFormat.LIST, routing_hint=RoutingHint.STRUCTURED_OUTPUT),
+        "Spotify and Apple Music are both major streaming services with different strengths.",
+        RoutingHint.STRUCTURED_OUTPUT,
+        OutputFormat.LIST,
+    )
+
+    assert result.passed is False
+    assert "list output" in result.reason.lower()
+    mock_runner.generate.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_validator_uses_tier_one_model(mock_runner, llm_response_factory, mock_settings, subtask_factory):
     settings = mock_settings()
     tier_one_model_id = build_model_registry(settings)["tier1_openai"].model_id
@@ -103,3 +169,25 @@ async def test_validator_uses_tier_one_model(mock_runner, llm_response_factory, 
 
     assert mock_runner.generate.await_args.kwargs["model_id"] == tier_one_model_id
 
+
+@pytest.mark.asyncio
+async def test_validator_system_prompt_instructs_to_pass_when_complete_but_unpolished(
+    mock_runner,
+    llm_response_factory,
+    subtask_factory,
+):
+    mock_runner.queue_response(llm_response_factory('{"passed": true, "reason": "Complete enough."}'))
+    agent = ValidatorAgent(mock_runner, Provider.OPENAI, "gpt-4o-mini")
+
+    result = await agent.validate(
+        subtask_factory(),
+        "This output is complete, but the transitions are a little abrupt.",
+        RoutingHint.GENERAL_REASONING,
+        OutputFormat.PARAGRAPH,
+    )
+
+    assert result.passed is True
+    system_prompt = mock_runner.generate.await_args.kwargs["system_prompt"]
+    assert "Only return passed: false if the output is genuinely incomplete" in system_prompt
+    assert "When in doubt, pass." in system_prompt
+    assert "Always return both fields: passed and reason." in system_prompt

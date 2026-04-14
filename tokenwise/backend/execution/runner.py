@@ -24,22 +24,32 @@ class LLMRunner:
         temperature: float = 0.2,
         json_mode: bool = False,
     ) -> LLMResponse:
-        if provider == Provider.OPENAI:
-            return await self._call_openai(
+        async def invoke_once() -> LLMResponse:
+            if provider == Provider.OPENAI:
+                return await self._call_openai(
+                    model_id=model_id,
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    max_output_tokens=max_output_tokens,
+                    temperature=temperature,
+                    json_mode=json_mode,
+                )
+            return await self._call_anthropic(
                 model_id=model_id,
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
                 max_output_tokens=max_output_tokens,
                 temperature=temperature,
-                json_mode=json_mode,
             )
-        return await self._call_anthropic(
-            model_id=model_id,
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            max_output_tokens=max_output_tokens,
-            temperature=temperature,
-        )
+
+        response = await invoke_once()
+        if response.output_text.strip():
+            return response
+
+        retry_response = await invoke_once()
+        if retry_response.output_text.strip():
+            return retry_response
+        return retry_response
 
     async def _call_openai(
         self,

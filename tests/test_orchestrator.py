@@ -99,3 +99,85 @@ async def test_valid_json_that_fails_model_validate_triggers_retry(mock_runner, 
     assert len(plan.subtasks) == 3
     assert mock_runner.generate.await_count == 2
 
+
+@pytest.mark.asyncio
+async def test_output_format_code_is_normalized_to_markdown_before_validation(mock_runner, llm_response_factory):
+    code_plan_json = """
+    {
+      "subtasks": [
+        {
+          "id": "task_1",
+          "description": "Design the service",
+          "complexity": "medium",
+          "depends_on": [],
+          "output_format": "paragraph",
+          "routing_hint": "general_reasoning"
+        },
+        {
+          "id": "task_2",
+          "description": "Write the implementation",
+          "complexity": "high",
+          "depends_on": ["task_1"],
+          "output_format": "code",
+          "routing_hint": "code_generation"
+        },
+        {
+          "id": "task_3",
+          "description": "Summarize the design decisions",
+          "complexity": "medium",
+          "depends_on": ["task_2"],
+          "output_format": "markdown",
+          "routing_hint": "creative_synthesis"
+        }
+      ]
+    }
+    """
+    mock_runner.queue_response(llm_response_factory(code_plan_json))
+    agent = OrchestratorAgent(mock_runner, Provider.OPENAI, "gpt-4o")
+
+    plan = await agent.create_plan("Design a fraud detection service.")
+
+    assert plan.subtasks[1].output_format.value == "markdown"
+
+
+@pytest.mark.asyncio
+async def test_output_format_json_is_normalized_to_markdown_for_human_readable_schema_tasks(
+    mock_runner,
+    llm_response_factory,
+):
+    schema_plan_json = """
+    {
+      "subtasks": [
+        {
+          "id": "task_1",
+          "description": "Describe the system overview",
+          "complexity": "medium",
+          "depends_on": [],
+          "output_format": "markdown",
+          "routing_hint": "creative_synthesis"
+        },
+        {
+          "id": "task_2",
+          "description": "Define the core data schema for transaction events",
+          "complexity": "medium",
+          "depends_on": ["task_1"],
+          "output_format": "json",
+          "routing_hint": "structured_output"
+        },
+        {
+          "id": "task_3",
+          "description": "Explain the implementation tradeoffs",
+          "complexity": "high",
+          "depends_on": ["task_2"],
+          "output_format": "markdown",
+          "routing_hint": "general_reasoning"
+        }
+      ]
+    }
+    """
+    mock_runner.queue_response(llm_response_factory(schema_plan_json))
+    agent = OrchestratorAgent(mock_runner, Provider.OPENAI, "gpt-4o")
+
+    plan = await agent.create_plan("Design a fraud detection service.")
+
+    assert plan.subtasks[1].output_format.value == "markdown"

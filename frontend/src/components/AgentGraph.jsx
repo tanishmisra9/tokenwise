@@ -1,3 +1,5 @@
+import { useEffect, useRef, useState } from "react";
+
 function statusTone(status) {
   if (status === "completed" || status === "completed_degraded") return "tone-success";
   if (status === "running") return "tone-live";
@@ -42,6 +44,45 @@ function truncateReason(reason) {
 
 export default function AgentGraph({ run }) {
   const subtasks = run.plan ?? [];
+  const scrollRegionRef = useRef(null);
+  const listRef = useRef(null);
+  const [targetMaxHeight, setTargetMaxHeight] = useState(0);
+  const subtaskSignature = subtasks.map((subtask) => subtask.id).join("|");
+
+  useEffect(() => {
+    if (!subtasks.length) {
+      setTargetMaxHeight(0);
+      return;
+    }
+
+    const updateTargetHeight = () => {
+      const listHeight = listRef.current?.scrollHeight ?? 0;
+      const availableHeight = scrollRegionRef.current?.parentElement?.clientHeight ?? listHeight;
+      setTargetMaxHeight(Math.max(0, Math.min(listHeight, availableHeight)));
+    };
+
+    updateTargetHeight();
+
+    if (typeof ResizeObserver === "undefined") {
+      return undefined;
+    }
+
+    const observer = new ResizeObserver(() => {
+      updateTargetHeight();
+    });
+
+    if (listRef.current) {
+      observer.observe(listRef.current);
+    }
+
+    if (scrollRegionRef.current?.parentElement) {
+      observer.observe(scrollRegionRef.current.parentElement);
+    }
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [subtaskSignature, subtasks.length]);
 
   return (
     <div className="agent-graph">
@@ -56,8 +97,12 @@ export default function AgentGraph({ run }) {
         </div>
       ) : (
         <div className="subtask-stack">
-          <div className="subtask-scroll-region">
-            <div className="subtask-list">
+          <div
+            className="subtask-scroll-region"
+            ref={scrollRegionRef}
+            style={{ maxHeight: `${targetMaxHeight}px` }}
+          >
+            <div className="subtask-list" ref={listRef}>
               {subtasks.map((subtask, index) => {
                 const liveState = run.subtasks?.[subtask.id] ?? {};
                 const attempts = liveState.attempts ?? [];
@@ -67,7 +112,11 @@ export default function AgentGraph({ run }) {
                 const latestReason = truncateReason(liveState.events?.at(-1)?.reason ?? "");
 
                 return (
-                  <article className={`subtask-card ${statusTone(liveState.status)}`} key={subtask.id}>
+                  <article
+                    className={`subtask-card subtask-card-enter ${statusTone(liveState.status)}`}
+                    key={subtask.id}
+                    style={{ animationDelay: `${index * 60}ms` }}
+                  >
                     <div className="subtask-step">{String(index + 1).padStart(2, "0")}</div>
                     <div className="subtask-body">
                       <div className="subtask-head">

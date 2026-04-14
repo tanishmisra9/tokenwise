@@ -452,10 +452,13 @@ body::before {
 .subtask-scroll-region {
   flex: 1;
   min-height: 0;
+  max-height: 0;
   overflow-y: auto;
   padding-right: var(--space-1);
   scrollbar-width: thin;
   scrollbar-color: var(--surface-strong) transparent;
+  transition: max-height 0.3s ease;
+  will-change: max-height;
 }
 
 .subtask-scroll-region::-webkit-scrollbar {
@@ -483,7 +486,13 @@ body::before {
   transition:
     background-color 200ms cubic-bezier(0.16, 1, 0.3, 1),
     border-color 200ms cubic-bezier(0.16, 1, 0.3, 1),
-    transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.subtask-card-enter {
+  opacity: 0;
+  transform: translateY(8px);
+  animation: subtaskCardIn 200ms ease-out forwards;
 }
 
 .subtask-card:hover {
@@ -946,6 +955,18 @@ body::before {
 
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes subtaskCardIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 

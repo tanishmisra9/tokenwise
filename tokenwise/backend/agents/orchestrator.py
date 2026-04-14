@@ -12,10 +12,55 @@ logger = logging.getLogger(__name__)
 
 
 class OrchestratorAgent:
+    JSON_TO_MARKDOWN_KEYWORDS = {
+        "schema",
+        "design",
+        "architecture",
+        "diagram",
+        "plan",
+        "strategy",
+        "overview",
+        "implementation",
+    }
+
     def __init__(self, runner: LLMRunner, provider: Provider, model_id: str) -> None:
         self.runner = runner
         self.provider = provider
         self.model_id = model_id
+
+    @staticmethod
+    def _normalize_payload(payload: object) -> object:
+        if not isinstance(payload, dict):
+            return payload
+
+        subtasks = payload.get("subtasks")
+        if not isinstance(subtasks, list):
+            return payload
+
+        normalized_subtasks: list[object] = []
+        for subtask in subtasks:
+            if isinstance(subtask, dict):
+                normalized_subtask = dict(subtask)
+                output_format = normalized_subtask.get("output_format")
+                description = str(normalized_subtask.get("description", "")).lower()
+
+                if output_format == "code":
+                    normalized_subtask["output_format"] = "markdown"
+                    normalized_subtasks.append(normalized_subtask)
+                    continue
+
+                if output_format == "json" and any(
+                    keyword in description for keyword in OrchestratorAgent.JSON_TO_MARKDOWN_KEYWORDS
+                ):
+                    normalized_subtask["output_format"] = "markdown"
+                    normalized_subtasks.append(normalized_subtask)
+                    continue
+
+            normalized_subtasks.append(subtask)
+
+        normalized_payload = dict(payload)
+        normalized_payload["subtasks"] = normalized_subtasks
+        return normalized_payload
 
     async def create_plan(self, task: str) -> ExecutionPlan:
         base_system_prompt = (
@@ -24,6 +69,12 @@ class OrchestratorAgent:
             '{"subtasks":[{"id":"task_1","description":"...","complexity":"low|medium|high",'
             '"depends_on":["task_1"],"output_format":"paragraph|list|json|markdown",'
             '"routing_hint":"general_reasoning|structured_output|instruction_following|creative_synthesis|code_generation"}]}'
+            ' output_format must be exactly one of: paragraph, list, json, markdown — no other values are valid. '
+            "IMPORTANT: Use output_format 'json' ONLY when the subtask explicitly asks for a machine-readable data "
+            "structure that will be consumed programmatically — for example, an API response schema or a config file. "
+            "For data schemas described for human readers, system designs, technical architectures, code "
+            "implementations, and any content that mixes explanation with structure, always use 'markdown'. "
+            "When in doubt, use 'markdown' not 'json'."
         )
         user_prompt = (
             f"User task:\n{task}\n\n"
@@ -55,6 +106,7 @@ class OrchestratorAgent:
                     json_mode=True,
                 )
                 payload = extract_json_payload(response.output_text)
+                payload = self._normalize_payload(payload)
                 return ExecutionPlan.model_validate(payload)
             except Exception as exc:
                 if not isinstance(exc, ValidationError | ValueError):

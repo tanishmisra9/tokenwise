@@ -373,6 +373,11 @@ class TokenwiseCoordinator:
             try:
                 timeout_seconds = self._timeout_for_tier(route.tier)
                 try:
+                    tier_output_tokens = {
+                        1: self.settings.tier1_max_output_tokens,
+                        2: self.settings.tier2_max_output_tokens,
+                        3: self.settings.tier3_max_output_tokens,
+                    }[route.tier]
                     response = await asyncio.wait_for(
                         self.runner.generate(
                             provider=route.provider,
@@ -383,7 +388,7 @@ class TokenwiseCoordinator:
                                 subtask_result.subtask,
                                 completed_outputs,
                             ),
-                            max_output_tokens=950 if subtask_result.subtask.output_format.value != "json" else 700,
+                            max_output_tokens=tier_output_tokens,
                             temperature=0.2,
                             json_mode=subtask_result.subtask.output_format.value == "json" and route.provider == Provider.OPENAI,
                         ),
