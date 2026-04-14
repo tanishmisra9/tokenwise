@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from contextlib import asynccontextmanager, suppress
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.extension import _rate_limit_exceeded_handler
@@ -133,6 +135,8 @@ def create_app(
         finally:
             app.state.coordinator.event_hub.unsubscribe(run_id, queue)
 
+    app.mount("/", StaticFiles(directory="frontend/dist", html=True), name="frontend")
+
     return app
 
 
@@ -143,7 +147,7 @@ def main() -> None:
     uvicorn.run(
         "tokenwise.backend.main:app",
         host=Settings().api_host,
-        port=Settings().api_port,
+        port=int(os.environ.get("PORT", 8000)),
         reload=False,
     )
 

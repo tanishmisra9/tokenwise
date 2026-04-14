@@ -5,6 +5,7 @@ tests/test_cost.py
 tests/test_escalation.py
 tests/test_history.py
 tests/test_orchestrator.py
+tests/test_rate_limiting.py
 tests/test_runtime.py
 tests/test_tier_router.py
 tests/test_validator.py
