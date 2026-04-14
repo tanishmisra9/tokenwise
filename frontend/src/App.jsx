@@ -5,7 +5,7 @@ import ResultOutput from "./components/ResultOutput";
 import RunStats from "./components/RunStats";
 import TaskInput from "./components/TaskInput";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
 const initialRunState = {
   runId: null,
@@ -72,7 +72,7 @@ function markFailedSubtask(subtasks) {
 
 function buildWebSocketUrl(runId) {
   const url = new URL(`/runs/${runId}`, API_BASE_URL);
-  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  url.protocol = API_BASE_URL.startsWith("https://") ? "wss:" : "ws:";
   return url.toString();
 }
 
