@@ -6,8 +6,9 @@ from tokenwise.backend.utils import extract_json_payload
 
 
 class ValidatorAgent:
-    def __init__(self, runner: LLMRunner, model_id: str) -> None:
+    def __init__(self, runner: LLMRunner, provider: Provider, model_id: str) -> None:
         self.runner = runner
+        self.provider = provider
         self.model_id = model_id
 
     async def validate(self, subtask: SubTask, output_text: str) -> ValidationResult:
@@ -22,7 +23,7 @@ class ValidatorAgent:
                 return ValidationResult(passed=False, reason="Expected JSON output but the content was not parseable JSON.")
 
         response = await self.runner.generate(
-            provider=Provider.OPENAI,
+            provider=self.provider,
             model_id=self.model_id,
             system_prompt=(
                 "You are the Tokenwise validator. Check whether the output is complete, coherent, and "
@@ -39,4 +40,3 @@ class ValidatorAgent:
         )
         payload = extract_json_payload(response.output_text)
         return ValidationResult.model_validate(payload)
-

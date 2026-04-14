@@ -8,13 +8,14 @@ from tokenwise.backend.utils import extract_json_payload
 
 
 class OrchestratorAgent:
-    def __init__(self, runner: LLMRunner, model_id: str) -> None:
+    def __init__(self, runner: LLMRunner, provider: Provider, model_id: str) -> None:
         self.runner = runner
+        self.provider = provider
         self.model_id = model_id
 
     async def create_plan(self, task: str) -> ExecutionPlan:
         response = await self.runner.generate(
-            provider=Provider.OPENAI,
+            provider=self.provider,
             model_id=self.model_id,
             system_prompt=(
                 "You are the Tokenwise orchestration planner. Break the user task into 3 to 7 "
@@ -37,4 +38,3 @@ class OrchestratorAgent:
             return ExecutionPlan.model_validate(payload)
         except ValidationError as exc:
             raise RuntimeError(f"Orchestrator returned invalid execution plan: {exc}") from exc
-

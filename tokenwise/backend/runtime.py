@@ -96,9 +96,25 @@ class TokenwiseCoordinator:
         self.runner = runner or LLMRunner(settings)
         self.router = router or TierRouter(self.model_registry)
         self.escalation_manager = escalation_manager or EscalationManager()
-        self.orchestrator = orchestrator or OrchestratorAgent(self.runner, self.model_registry["tier2_openai"].model_id)
-        self.validator = validator or ValidatorAgent(self.runner, self.model_registry["tier1_openai"].model_id)
-        self.composer = composer or ComposerAgent(self.runner, self.model_registry["tier2_openai"].model_id)
+        meta_provider = settings.meta_agent_provider
+        orchestrator_profile = self.model_registry[f"tier2_{meta_provider.value}"]
+        validator_profile = self.model_registry[f"tier1_{meta_provider.value}"]
+        composer_profile = self.model_registry[f"tier2_{meta_provider.value}"]
+        self.orchestrator = orchestrator or OrchestratorAgent(
+            self.runner,
+            orchestrator_profile.provider,
+            orchestrator_profile.model_id,
+        )
+        self.validator = validator or ValidatorAgent(
+            self.runner,
+            validator_profile.provider,
+            validator_profile.model_id,
+        )
+        self.composer = composer or ComposerAgent(
+            self.runner,
+            composer_profile.provider,
+            composer_profile.model_id,
+        )
 
     def new_run_id(self) -> str:
         return f"run_{uuid.uuid4().hex[:10]}"

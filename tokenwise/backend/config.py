@@ -22,10 +22,11 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = Field(default=None, alias="ANTHROPIC_API_KEY")
     openai_base_url: str = Field(default="https://api.openai.com/v1", alias="TOKENWISE_OPENAI_BASE_URL")
     anthropic_base_url: str = Field(default="https://api.anthropic.com/v1", alias="TOKENWISE_ANTHROPIC_BASE_URL")
+    meta_agent_provider: Provider = Field(default=Provider.OPENAI, alias="TOKENWISE_META_AGENT_PROVIDER")
 
     openai_tier1_model_id: str = Field(default="gpt-4o-mini", alias="TOKENWISE_OPENAI_TIER1_MODEL_ID")
     openai_tier2_model_id: str = Field(default="gpt-4o", alias="TOKENWISE_OPENAI_TIER2_MODEL_ID")
-    openai_tier3_model_id: str = Field(default="o4-mini", alias="TOKENWISE_OPENAI_TIER3_MODEL_ID")
+    openai_tier3_model_id: str = Field(default="o1", alias="TOKENWISE_OPENAI_TIER3_MODEL_ID")
     anthropic_tier1_model_id: str = Field(
         default="claude-3-5-haiku-20241022",
         alias="TOKENWISE_ANTHROPIC_TIER1_MODEL_ID",
@@ -35,7 +36,7 @@ class Settings(BaseSettings):
         alias="TOKENWISE_ANTHROPIC_TIER2_MODEL_ID",
     )
     anthropic_tier3_model_id: str = Field(
-        default="claude-opus-4-1-20250805",
+        default="claude-3-opus-20240229",
         alias="TOKENWISE_ANTHROPIC_TIER3_MODEL_ID",
     )
 
@@ -83,11 +84,11 @@ def build_model_registry(settings: Settings) -> dict[str, ModelProfile]:
         ),
         "tier3_openai": ModelProfile(
             alias="tier3_openai",
-            display_name="o4-mini",
+            display_name="o1",
             provider=Provider.OPENAI,
             tier=3,
             model_id=settings.openai_tier3_model_id,
-            pricing=TokenPricing(input_per_million=1.10, output_per_million=4.40),
+            pricing=TokenPricing(input_per_million=15.00, output_per_million=60.00),
             capability_flags=["reasoning", "escalation", "high_confidence"],
         ),
         "tier1_anthropic": ModelProfile(
@@ -110,7 +111,7 @@ def build_model_registry(settings: Settings) -> dict[str, ModelProfile]:
         ),
         "tier3_anthropic": ModelProfile(
             alias="tier3_anthropic",
-            display_name="Claude Opus 4.1",
+            display_name="Claude Opus 3",
             provider=Provider.ANTHROPIC,
             tier=3,
             model_id=settings.anthropic_tier3_model_id,

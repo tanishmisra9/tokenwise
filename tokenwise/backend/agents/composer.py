@@ -5,8 +5,9 @@ from tokenwise.backend.models.schemas import Provider, SubTaskResult
 
 
 class ComposerAgent:
-    def __init__(self, runner: LLMRunner, model_id: str) -> None:
+    def __init__(self, runner: LLMRunner, provider: Provider, model_id: str) -> None:
         self.runner = runner
+        self.provider = provider
         self.model_id = model_id
 
     async def compose(self, task: str, subtask_results: list[SubTaskResult]) -> str:
@@ -18,7 +19,7 @@ class ComposerAgent:
             )
 
         response = await self.runner.generate(
-            provider=Provider.OPENAI,
+            provider=self.provider,
             model_id=self.model_id,
             system_prompt=(
                 "You are the Tokenwise composer. Combine the completed subtask outputs into one final "
