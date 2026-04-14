@@ -1,0 +1,494 @@
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@400;500;700&display=swap");
+
+:root {
+  color-scheme: dark;
+  --bg: #081118;
+  --bg-soft: rgba(10, 24, 33, 0.72);
+  --bg-strong: rgba(11, 20, 28, 0.92);
+  --surface: rgba(16, 29, 40, 0.82);
+  --surface-strong: rgba(15, 25, 34, 0.94);
+  --border: rgba(154, 212, 203, 0.16);
+  --text: #f4f7f2;
+  --muted: #9fbaa9;
+  --accent: #75e4ca;
+  --accent-warm: #ffb062;
+  --danger: #ff7474;
+  --success: #9ff2a4;
+  --shadow: 0 24px 80px rgba(2, 8, 12, 0.38);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(circle at top left, rgba(117, 228, 202, 0.14), transparent 34%),
+    radial-gradient(circle at bottom right, rgba(255, 176, 98, 0.16), transparent 28%),
+    linear-gradient(180deg, #061017 0%, #0c171f 100%);
+  color: var(--text);
+  font-family: "IBM Plex Sans", sans-serif;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(circle at center, black, transparent 85%);
+  pointer-events: none;
+}
+
+.app-shell {
+  position: relative;
+  padding: 2.2rem;
+}
+
+.backdrop-grid {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 18% 12%, rgba(117, 228, 202, 0.12), transparent 24%),
+    radial-gradient(circle at 78% 22%, rgba(255, 176, 98, 0.12), transparent 20%);
+  filter: blur(24px);
+}
+
+.hero {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  gap: 2rem;
+  align-items: flex-end;
+  margin-bottom: 1.8rem;
+}
+
+.hero-copy {
+  max-width: 880px;
+}
+
+.eyebrow {
+  margin: 0 0 0.5rem;
+  color: var(--accent);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-size: 0.72rem;
+}
+
+.hero h1,
+.panel-heading h2,
+.subtask-head h3 {
+  margin: 0;
+  font-family: "Space Grotesk", sans-serif;
+  letter-spacing: -0.04em;
+}
+
+.hero h1 {
+  max-width: 15ch;
+  font-size: clamp(2.8rem, 5vw, 5rem);
+  line-height: 0.95;
+}
+
+.lede {
+  max-width: 54rem;
+  margin: 1rem 0 0;
+  color: var(--muted);
+  font-size: 1.02rem;
+}
+
+.hero-metrics {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.metric-chip,
+.panel,
+.history-item,
+.stat-card,
+.subtask-card,
+.result-shell {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(18px);
+}
+
+.metric-chip {
+  min-width: 11rem;
+  padding: 1rem 1.1rem;
+  border-radius: 1.2rem;
+}
+
+.metric-chip span,
+.status-pill,
+.subtask-meta,
+.history-meta,
+.model-chip span,
+.stat-card span {
+  color: var(--muted);
+}
+
+.metric-chip strong {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 1.2rem;
+}
+
+.alert-banner {
+  margin-bottom: 1rem;
+  padding: 1rem 1.15rem;
+  border-radius: 1rem;
+  background: rgba(255, 116, 116, 0.12);
+  border: 1px solid rgba(255, 116, 116, 0.28);
+  color: #ffd0d0;
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: 1.05fr 1fr;
+  gap: 1rem;
+}
+
+.panel {
+  position: relative;
+  overflow: hidden;
+  padding: 1.3rem;
+  border-radius: 1.5rem;
+  background: linear-gradient(180deg, rgba(17, 31, 41, 0.92), rgba(10, 20, 28, 0.92));
+  animation: rise 420ms ease;
+}
+
+.panel::after {
+  content: "";
+  position: absolute;
+  inset: auto -15% -72% auto;
+  width: 10rem;
+  height: 10rem;
+  background: radial-gradient(circle, rgba(117, 228, 202, 0.12), transparent 70%);
+  pointer-events: none;
+}
+
+.panel-input,
+.panel-agent,
+.panel-history {
+  min-height: 20rem;
+}
+
+.panel-result,
+.panel-stats {
+  min-height: 17rem;
+}
+
+.panel-heading {
+  position: relative;
+  z-index: 1;
+  margin-bottom: 1rem;
+}
+
+.panel-heading h2 {
+  font-size: 1.5rem;
+}
+
+.task-form,
+.run-stats,
+.history-panel,
+.agent-graph,
+.result-output {
+  position: relative;
+  z-index: 1;
+}
+
+.field {
+  display: grid;
+  gap: 0.45rem;
+  margin-bottom: 1rem;
+}
+
+.field span {
+  font-size: 0.92rem;
+  color: var(--muted);
+}
+
+.field textarea,
+.field input,
+.field select {
+  width: 100%;
+  border: 1px solid rgba(154, 212, 203, 0.18);
+  border-radius: 1rem;
+  padding: 0.95rem 1rem;
+  background: var(--bg-soft);
+  color: var(--text);
+  font: inherit;
+}
+
+.field textarea {
+  resize: vertical;
+  min-height: 12rem;
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.submit-button {
+  width: 100%;
+  border: 0;
+  border-radius: 999px;
+  padding: 0.95rem 1.15rem;
+  font: 600 1rem "Space Grotesk", sans-serif;
+  color: #061118;
+  background: linear-gradient(135deg, var(--accent) 0%, #d7fff2 100%);
+  cursor: pointer;
+  transition: transform 160ms ease, box-shadow 160ms ease;
+  box-shadow: 0 16px 40px rgba(117, 228, 202, 0.18);
+}
+
+.submit-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.submit-button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.empty-state {
+  padding: 1.2rem;
+  border: 1px dashed rgba(154, 212, 203, 0.18);
+  border-radius: 1rem;
+  color: var(--muted);
+}
+
+.subtask-list {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.subtask-card {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 1rem;
+  padding: 1rem;
+  border-radius: 1.15rem;
+  background: linear-gradient(180deg, rgba(15, 27, 36, 0.96), rgba(11, 19, 26, 0.96));
+}
+
+.subtask-step {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-family: "Space Grotesk", sans-serif;
+  background: rgba(117, 228, 202, 0.14);
+  color: var(--accent);
+}
+
+.subtask-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.subtask-id {
+  margin: 0 0 0.35rem;
+  color: var(--accent-warm);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.75rem;
+}
+
+.subtask-head h3 {
+  font-size: 1.05rem;
+  line-height: 1.1;
+}
+
+.status-pill {
+  flex-shrink: 0;
+  border-radius: 999px;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid rgba(154, 212, 203, 0.18);
+  font-size: 0.82rem;
+}
+
+.subtask-meta,
+.attempt-strip,
+.event-list,
+.model-usage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin-top: 0.85rem;
+}
+
+.subtask-meta span,
+.attempt-pill,
+.event-pill,
+.model-chip {
+  border-radius: 999px;
+  padding: 0.38rem 0.72rem;
+  border: 1px solid rgba(154, 212, 203, 0.14);
+  background: rgba(9, 18, 24, 0.72);
+  font-size: 0.82rem;
+}
+
+.attempt-pill strong,
+.event-pill strong,
+.model-chip strong {
+  display: block;
+  color: var(--text);
+}
+
+.subtask-output,
+.result-shell pre {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: "IBM Plex Sans", sans-serif;
+  line-height: 1.55;
+}
+
+.subtask-output {
+  margin-top: 1rem;
+  padding: 1rem;
+  border-radius: 1rem;
+  background: rgba(6, 13, 18, 0.72);
+  max-height: 12rem;
+  overflow: auto;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.stat-card {
+  padding: 1rem;
+  border-radius: 1rem;
+}
+
+.stat-card strong {
+  display: block;
+  margin-top: 0.35rem;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 1.25rem;
+}
+
+.model-usage {
+  margin-top: 1rem;
+}
+
+.result-shell {
+  border-radius: 1.2rem;
+  padding: 1.1rem;
+  background: linear-gradient(180deg, rgba(11, 21, 30, 0.96), rgba(8, 16, 23, 0.96));
+}
+
+.result-error {
+  border-color: rgba(255, 116, 116, 0.28);
+}
+
+.recent-runs {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.history-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.95rem 1rem;
+  border-radius: 1rem;
+}
+
+.history-title {
+  margin: 0;
+  font-weight: 600;
+}
+
+.history-meta,
+.history-values span {
+  font-size: 0.86rem;
+}
+
+.history-values {
+  text-align: right;
+}
+
+.history-values strong {
+  display: block;
+  font-family: "Space Grotesk", sans-serif;
+}
+
+.tone-success {
+  border-color: rgba(159, 242, 164, 0.22);
+}
+
+.tone-live {
+  border-color: rgba(117, 228, 202, 0.28);
+}
+
+.tone-danger {
+  border-color: rgba(255, 116, 116, 0.22);
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 1100px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hero {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .hero h1 {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 720px) {
+  .app-shell {
+    padding: 1rem;
+  }
+
+  .stats-grid,
+  .field-row {
+    grid-template-columns: 1fr;
+  }
+
+  .subtask-card {
+    grid-template-columns: 1fr;
+  }
+
+  .subtask-step {
+    width: 2rem;
+    height: 2rem;
+  }
+}

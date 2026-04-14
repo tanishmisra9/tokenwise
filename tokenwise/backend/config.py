@@ -1,0 +1,120 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from tokenwise.backend.models.schemas import ModelProfile, Provider, TokenPricing
+
+
+class Settings(BaseSettings):
+    app_name: str = "Tokenwise"
+    api_host: str = Field(default="127.0.0.1", alias="TOKENWISE_API_HOST")
+    api_port: int = Field(default=8000, alias="TOKENWISE_API_PORT")
+    db_path: str = Field(default="tokenwise.db", alias="TOKENWISE_DB_PATH")
+    request_timeout_seconds: float = 90.0
+    latency_threshold_ms: int = 18_000
+    recent_runs_limit: int = 8
+    cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+
+    openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
+    anthropic_api_key: str | None = Field(default=None, alias="ANTHROPIC_API_KEY")
+    openai_base_url: str = Field(default="https://api.openai.com/v1", alias="TOKENWISE_OPENAI_BASE_URL")
+    anthropic_base_url: str = Field(default="https://api.anthropic.com/v1", alias="TOKENWISE_ANTHROPIC_BASE_URL")
+
+    openai_tier1_model_id: str = Field(default="gpt-4o-mini", alias="TOKENWISE_OPENAI_TIER1_MODEL_ID")
+    openai_tier2_model_id: str = Field(default="gpt-4o", alias="TOKENWISE_OPENAI_TIER2_MODEL_ID")
+    openai_tier3_model_id: str = Field(default="o4-mini", alias="TOKENWISE_OPENAI_TIER3_MODEL_ID")
+    anthropic_tier1_model_id: str = Field(
+        default="claude-3-5-haiku-20241022",
+        alias="TOKENWISE_ANTHROPIC_TIER1_MODEL_ID",
+    )
+    anthropic_tier2_model_id: str = Field(
+        default="claude-sonnet-4-20250514",
+        alias="TOKENWISE_ANTHROPIC_TIER2_MODEL_ID",
+    )
+    anthropic_tier3_model_id: str = Field(
+        default="claude-opus-4-1-20250805",
+        alias="TOKENWISE_ANTHROPIC_TIER3_MODEL_ID",
+    )
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        populate_by_name=True,
+    )
+
+    @property
+    def resolved_db_path(self) -> Path:
+        return Path(self.db_path).expanduser().resolve()
+
+    def require_provider_keys(self) -> None:
+        missing = []
+        if not self.openai_api_key:
+            missing.append("OPENAI_API_KEY")
+        if not self.anthropic_api_key:
+            missing.append("ANTHROPIC_API_KEY")
+        if missing:
+            missing_keys = ", ".join(missing)
+            raise RuntimeError(f"Missing required API keys: {missing_keys}")
+
+
+def build_model_registry(settings: Settings) -> dict[str, ModelProfile]:
+    return {
+        "tier1_openai": ModelProfile(
+            alias="tier1_openai",
+            display_name="GPT-4o mini",
+            provider=Provider.OPENAI,
+            tier=1,
+            model_id=settings.openai_tier1_model_id,
+            pricing=TokenPricing(input_per_million=0.15, output_per_million=0.60),
+            capability_flags=["cheap", "general", "fast"],
+        ),
+        "tier2_openai": ModelProfile(
+            alias="tier2_openai",
+            display_name="GPT-4o",
+            provider=Provider.OPENAI,
+            tier=2,
+            model_id=settings.openai_tier2_model_id,
+            pricing=TokenPricing(input_per_million=2.50, output_per_million=10.00),
+            capability_flags=["general", "synthesis", "balanced"],
+        ),
+        "tier3_openai": ModelProfile(
+            alias="tier3_openai",
+            display_name="o4-mini",
+            provider=Provider.OPENAI,
+            tier=3,
+            model_id=settings.openai_tier3_model_id,
+            pricing=TokenPricing(input_per_million=1.10, output_per_million=4.40),
+            capability_flags=["reasoning", "escalation", "high_confidence"],
+        ),
+        "tier1_anthropic": ModelProfile(
+            alias="tier1_anthropic",
+            display_name="Claude Haiku 3.5",
+            provider=Provider.ANTHROPIC,
+            tier=1,
+            model_id=settings.anthropic_tier1_model_id,
+            pricing=TokenPricing(input_per_million=0.80, output_per_million=4.00),
+            capability_flags=["structured", "fast", "cheap"],
+        ),
+        "tier2_anthropic": ModelProfile(
+            alias="tier2_anthropic",
+            display_name="Claude Sonnet 4",
+            provider=Provider.ANTHROPIC,
+            tier=2,
+            model_id=settings.anthropic_tier2_model_id,
+            pricing=TokenPricing(input_per_million=3.00, output_per_million=15.00),
+            capability_flags=["structured", "analysis", "balanced"],
+        ),
+        "tier3_anthropic": ModelProfile(
+            alias="tier3_anthropic",
+            display_name="Claude Opus 4.1",
+            provider=Provider.ANTHROPIC,
+            tier=3,
+            model_id=settings.anthropic_tier3_model_id,
+            pricing=TokenPricing(input_per_million=15.00, output_per_million=75.00),
+            capability_flags=["reasoning", "deep_analysis", "high_confidence"],
+        ),
+    }

@@ -1,0 +1,37 @@
+# Tokenwise
+
+Tokenwise is an agentic orchestration MVP that breaks a complex task into subtasks, routes each step to a cost-aware model tier, validates results, escalates when needed, composes the final answer, and keeps a full cost history.
+
+## Stack
+
+- Backend: FastAPI, HTTPX, SQLite
+- Frontend: React + Vite
+- Runtime: real OpenAI Chat Completions and Anthropic Messages API calls
+
+## Local setup
+
+1. Copy `.env.example` to `.env` and add valid `OPENAI_API_KEY` and `ANTHROPIC_API_KEY`.
+2. Install Python dependencies with `uv sync`.
+3. Install frontend dependencies with `cd frontend && npm install`.
+4. Start the backend with `uv run uvicorn tokenwise.backend.main:app --reload`.
+5. Start the frontend with `cd frontend && npm run dev`.
+
+The frontend defaults to `http://localhost:8000` for API traffic. History is stored in `tokenwise.db` by default.
+
+## Backend API
+
+- `POST /run`
+- `WS /runs/{run_id}`
+- `GET /history`
+
+The WebSocket streams event envelopes shaped like:
+
+```json
+{
+  "event": "subtask_started",
+  "run_id": "run_123",
+  "timestamp": "2026-04-13T21:52:00.000000+00:00",
+  "payload": {}
+}
+```
+
