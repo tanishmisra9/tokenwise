@@ -36,7 +36,7 @@ class Settings(BaseSettings):
         alias="TOKENWISE_ANTHROPIC_TIER2_MODEL_ID",
     )
     anthropic_tier3_model_id: str = Field(
-        default="claude-3-opus-20240229",
+        default="claude-opus-4-1-20250805",
         alias="TOKENWISE_ANTHROPIC_TIER3_MODEL_ID",
     )
 
@@ -111,7 +111,7 @@ def build_model_registry(settings: Settings) -> dict[str, ModelProfile]:
         ),
         "tier3_anthropic": ModelProfile(
             alias="tier3_anthropic",
-            display_name="Claude Opus 3",
+            display_name="Claude Opus 4.1",
             provider=Provider.ANTHROPIC,
             tier=3,
             model_id=settings.anthropic_tier3_model_id,

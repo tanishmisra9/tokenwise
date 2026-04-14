@@ -1,3 +1,5 @@
+import ReactMarkdown from "react-markdown";
+
 export default function ResultOutput({ run }) {
   return (
     <div className="result-output">
@@ -21,10 +23,11 @@ export default function ResultOutput({ run }) {
 
       {run.finalOutput ? (
         <div className="result-shell">
-          <pre>{run.finalOutput}</pre>
+          <div className="result-markdown">
+            <ReactMarkdown>{run.finalOutput}</ReactMarkdown>
+          </div>
         </div>
       ) : null}
     </div>
   );
 }
-

@@ -32,24 +32,6 @@ export default function HistoryPanel({ history }) {
           <strong>{Number(history.avg_savings_pct ?? 0).toFixed(2)}%</strong>
         </div>
       </div>
-
-      <div className="recent-runs">
-        {(history.runs ?? []).map((run) => (
-          <article className="history-item" key={run.run_id}>
-            <div>
-              <p className="history-title">{run.task_preview}</p>
-              <span className="history-meta">
-                {run.status} · {run.tokens_used.toLocaleString()} tokens · {run.escalations} escalations
-              </span>
-            </div>
-            <div className="history-values">
-              <strong>{formatUsd(run.actual_cost_usd)}</strong>
-              <span>{Number(run.savings_pct ?? 0).toFixed(1)}% saved</span>
-            </div>
-          </article>
-        ))}
-      </div>
     </div>
   );
 }
-

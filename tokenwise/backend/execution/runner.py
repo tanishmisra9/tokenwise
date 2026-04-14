@@ -54,15 +54,23 @@ class LLMRunner:
         if not self.settings.openai_api_key:
             raise RuntimeError("OPENAI_API_KEY is required.")
 
-        payload = {
-            "model": model_id,
-            "messages": [
+        is_o1_family = model_id.startswith("o1")
+
+        if is_o1_family:
+            messages = [{"role": "user", "content": f"{system_prompt}\n\n{user_prompt}"}]
+        else:
+            messages = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
-            ],
-            "temperature": temperature,
+            ]
+
+        payload = {
+            "model": model_id,
+            "messages": messages,
             "max_completion_tokens": max_output_tokens,
         }
+        if not is_o1_family:
+            payload["temperature"] = temperature
         if json_mode:
             payload["response_format"] = {"type": "json_object"}
 
@@ -132,4 +140,3 @@ class LLMRunner:
             ),
             latency_ms=latency_ms,
         )
-
