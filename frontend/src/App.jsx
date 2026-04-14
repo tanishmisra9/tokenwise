@@ -5,6 +5,9 @@ import ResultOutput from "./components/ResultOutput";
 import RunStats from "./components/RunStats";
 import TaskInput from "./components/TaskInput";
 
+const RECONNECT_DELAY_MS = 2000;
+const MAX_RECONNECT_ATTEMPTS = 5;
+
 const initialRunState = {
   runId: null,
   status: "idle",
@@ -20,6 +23,7 @@ const initialRunState = {
 function formatConnectionLabel(status) {
   if (status === "streaming") return "Connected";
   if (status === "starting") return "Starting";
+  if (status === "reconnecting") return "Reconnecting...";
   if (status === "error") return "Error";
   if (status === "closed") return "Closed";
   return "Idle";
@@ -209,8 +213,150 @@ export default function App() {
   const [connectionStatus, setConnectionStatus] = useState("idle");
   const [error, setError] = useState("");
   const socketRef = useRef(null);
+  const reconnectTimeoutRef = useRef(null);
+  const reconnectAttemptsRef = useRef(0);
+  const activeRunIdRef = useRef(null);
+  const terminalEventReceivedRef = useRef(false);
+  const socketGenerationRef = useRef(0);
   const showLiveExecution =
     (currentRun.plan?.length ?? 0) > 0 && ["starting", "running"].includes(currentRun.status);
+
+  function clearReconnectTimeout() {
+    if (reconnectTimeoutRef.current) {
+      window.clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+  }
+
+  function closeSocket() {
+    clearReconnectTimeout();
+    socketGenerationRef.current += 1;
+
+    if (!socketRef.current) {
+      return;
+    }
+
+    const socket = socketRef.current;
+    socketRef.current = null;
+    socket.onopen = null;
+    socket.onclose = null;
+    socket.onerror = null;
+    socket.onmessage = null;
+
+    if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
+      socket.close();
+    }
+  }
+
+  function scheduleReconnect(runId) {
+    if (terminalEventReceivedRef.current) {
+      return;
+    }
+
+    if (reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
+      setConnectionStatus("error");
+      return;
+    }
+
+    reconnectAttemptsRef.current += 1;
+    setConnectionStatus("reconnecting");
+    clearReconnectTimeout();
+    reconnectTimeoutRef.current = window.setTimeout(() => {
+      reconnectTimeoutRef.current = null;
+      if (terminalEventReceivedRef.current || activeRunIdRef.current !== runId) {
+        return;
+      }
+      connectToRun(runId);
+    }, RECONNECT_DELAY_MS);
+  }
+
+  function connectToRun(runId) {
+    clearReconnectTimeout();
+    activeRunIdRef.current = runId;
+
+    const generation = socketGenerationRef.current + 1;
+    socketGenerationRef.current = generation;
+
+    if (socketRef.current) {
+      const previousSocket = socketRef.current;
+      socketRef.current = null;
+      previousSocket.onopen = null;
+      previousSocket.onclose = null;
+      previousSocket.onerror = null;
+      previousSocket.onmessage = null;
+      if (previousSocket.readyState === WebSocket.OPEN || previousSocket.readyState === WebSocket.CONNECTING) {
+        previousSocket.close();
+      }
+    }
+
+    const socket = new WebSocket(buildWebSocketUrl(runId));
+    socketRef.current = socket;
+
+    socket.onopen = () => {
+      if (socketGenerationRef.current !== generation) {
+        return;
+      }
+      reconnectAttemptsRef.current = 0;
+      clearReconnectTimeout();
+      setConnectionStatus("streaming");
+    };
+
+    socket.onerror = () => {
+      if (socketGenerationRef.current !== generation || terminalEventReceivedRef.current) {
+        return;
+      }
+      setConnectionStatus("reconnecting");
+    };
+
+    socket.onclose = () => {
+      if (socketGenerationRef.current !== generation) {
+        return;
+      }
+
+      socketRef.current = null;
+
+      if (terminalEventReceivedRef.current) {
+        setConnectionStatus("closed");
+        return;
+      }
+
+      scheduleReconnect(runId);
+    };
+
+    socket.onmessage = (message) => {
+      if (socketGenerationRef.current !== generation) {
+        return;
+      }
+
+      const parsed = JSON.parse(message.data);
+      if (parsed.event === "ping") {
+        return;
+      }
+
+      if (parsed.event === "run_completed" || parsed.event === "run_failed") {
+        terminalEventReceivedRef.current = true;
+        reconnectAttemptsRef.current = 0;
+        clearReconnectTimeout();
+      }
+
+      startTransition(() => {
+        setCurrentRun((previous) => eventReducer(previous, parsed));
+      });
+
+      if (parsed.event === "run_completed" || parsed.event === "run_failed") {
+        if (parsed.payload?.history_stats) {
+          startTransition(() => {
+            setHistory((previous) => ({
+              ...previous,
+              ...parsed.payload.history_stats,
+              runs: previous.runs,
+            }));
+          });
+        }
+        refreshHistory();
+      }
+    };
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -232,15 +378,17 @@ export default function App() {
     loadHistory();
     return () => {
       cancelled = true;
-      if (socketRef.current) {
-        socketRef.current.close();
-      }
+      closeSocket();
     };
   }, []);
 
   async function handleRunSubmit(event) {
     event.preventDefault();
     setError("");
+    closeSocket();
+    reconnectAttemptsRef.current = 0;
+    terminalEventReceivedRef.current = false;
+    activeRunIdRef.current = null;
     setConnectionStatus("starting");
     setCurrentRun({ ...initialRunState, status: "starting" });
 
@@ -259,37 +407,16 @@ export default function App() {
       }
 
       const payload = await response.json();
-      const socket = new WebSocket(buildWebSocketUrl(payload.run_id));
-      socketRef.current = socket;
+      reconnectAttemptsRef.current = 0;
+      terminalEventReceivedRef.current = false;
+      activeRunIdRef.current = payload.run_id;
       setCurrentRun({ ...initialRunState, runId: payload.run_id, status: "starting" });
-
-      socket.onopen = () => setConnectionStatus("streaming");
-      socket.onerror = () => setConnectionStatus("error");
-      socket.onclose = () => {
-        setConnectionStatus((status) => (status === "error" ? status : "closed"));
-      };
-      socket.onmessage = (message) => {
-        const parsed = JSON.parse(message.data);
-        startTransition(() => {
-          setCurrentRun((previous) => eventReducer(previous, parsed));
-        });
-
-        if (parsed.event === "run_completed" || parsed.event === "run_failed") {
-          if (parsed.payload?.history_stats) {
-            startTransition(() => {
-              setHistory((previous) => ({
-                ...previous,
-                ...parsed.payload.history_stats,
-                runs: previous.runs,
-              }));
-            });
-          }
-          refreshHistory();
-        }
-      };
+      connectToRun(payload.run_id);
     } catch (submitError) {
       setError(submitError.message);
       setConnectionStatus("error");
+      reconnectAttemptsRef.current = 0;
+      terminalEventReceivedRef.current = true;
       setCurrentRun({ ...initialRunState, status: "failed", error: submitError.message });
     }
   }

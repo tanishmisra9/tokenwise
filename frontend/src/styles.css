@@ -150,6 +150,10 @@ body {
   background: var(--yellow);
 }
 
+.state-reconnecting .connection-pill-dot {
+  background: var(--yellow);
+}
+
 .state-error .connection-pill-dot,
 .state-closed .connection-pill-dot {
   background: var(--red);
