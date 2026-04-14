@@ -24,7 +24,9 @@ RUN npm run build --prefix frontend
 # Copy backend
 COPY tokenwise ./tokenwise
 COPY .env.example .env.example
+COPY start.sh ./start.sh
+RUN chmod +x start.sh
 
 EXPOSE 8000
 
-CMD ["/bin/sh", "-c", ".venv/bin/uvicorn tokenwise.backend.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["./start.sh"]
