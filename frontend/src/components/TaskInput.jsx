@@ -1,4 +1,17 @@
+function estimateSubtasks(charCount) {
+  return Math.max(3, Math.min(7, Math.round(charCount / 120)));
+}
+
+function formatUsdRange(value) {
+  return value.toFixed(2);
+}
+
 export default function TaskInput({ form, setForm, onSubmit, isRunning }) {
+  const charCount = form.task.length;
+  const estimatedSubtasks = estimateSubtasks(charCount);
+  const lowEstimate = estimatedSubtasks * 0.00038;
+  const highEstimate = estimatedSubtasks * 0.006;
+
   return (
     <form className="task-form" onSubmit={onSubmit}>
       <div className="panel-heading">
@@ -15,38 +28,23 @@ export default function TaskInput({ form, setForm, onSubmit, isRunning }) {
           rows={8}
           required
         />
+        <p className="field-help task-estimate">
+          ~{charCount} chars · Est. {estimatedSubtasks} subtasks · ~$
+          {formatUsdRange(lowEstimate)}–${formatUsdRange(highEstimate)}
+        </p>
       </label>
 
-      <div className="field-row">
-        <label className="field">
-          <span>Budget cap (USD)</span>
-          <input
-            type="number"
-            min="0.01"
-            step="0.01"
-            value={form.budget_cap_usd}
-            onChange={(event) =>
-              setForm((previous) => ({
-                ...previous,
-                budget_cap_usd: Number(event.target.value),
-              }))
-            }
-            required
-          />
-        </label>
-
-        <label className="field">
-          <span>Quality floor</span>
-          <select
-            value={form.quality_floor}
-            onChange={(event) => setForm((previous) => ({ ...previous, quality_floor: event.target.value }))}
-          >
-            <option value="low">Low</option>
-            <option value="medium">Medium</option>
-            <option value="high">High</option>
-          </select>
-        </label>
-      </div>
+      <label className="field">
+        <span>Quality floor</span>
+        <select
+          value={form.quality_floor}
+          onChange={(event) => setForm((previous) => ({ ...previous, quality_floor: event.target.value }))}
+        >
+          <option value="low">Low</option>
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+        </select>
+      </label>
 
       <button className="submit-button" type="submit" disabled={isRunning}>
         {isRunning ? "Running orchestration..." : "Launch run"}
@@ -54,4 +52,3 @@ export default function TaskInput({ form, setForm, onSubmit, isRunning }) {
     </form>
   );
 }
-

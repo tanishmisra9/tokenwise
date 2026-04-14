@@ -10,13 +10,24 @@ class ComposerAgent:
         self.provider = provider
         self.model_id = model_id
 
-    async def compose(self, task: str, subtask_results: list[SubTaskResult]) -> str:
+    async def compose(
+        self,
+        task: str,
+        subtask_results: list[SubTaskResult],
+        revision_feedback: str | None = None,
+    ) -> str:
         ordered_outputs = []
         for result in subtask_results:
             ordered_outputs.append(
                 f"{result.subtask.id}: {result.subtask.description}\n"
                 f"Output:\n{result.final_output or ''}"
             )
+
+        revision_block = (
+            f"\n\nPrevious attempt failed quality check: {revision_feedback}. Revise accordingly."
+            if revision_feedback
+            else ""
+        )
 
         response = await self.runner.generate(
             provider=self.provider,
@@ -28,6 +39,7 @@ class ComposerAgent:
             user_prompt=(
                 f"Original task:\n{task}\n\n"
                 f"Subtask outputs in dependency order:\n\n{'\n\n'.join(ordered_outputs)}"
+                f"{revision_block}"
             ),
             max_output_tokens=1_200,
             temperature=0.2,

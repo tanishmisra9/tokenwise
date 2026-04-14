@@ -11,19 +11,23 @@ requires-python = ">=3.11"
 dependencies = [
   "fastapi>=0.115.0",
   "httpx>=0.28.0",
+  "limits>=5.8.0",
   "pydantic>=2.11.0",
   "pydantic-settings>=2.8.0",
   "python-dotenv>=1.0.1",
+  "slowapi>=0.1.9",
   "uvicorn[standard]>=0.35.0",
 ]
 
 [dependency-groups]
 dev = [
   "pytest>=8.3.0",
+  "pytest-asyncio>=0.23.8",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_mode = "auto"
 
 [tool.setuptools.packages.find]
 include = ["tokenwise*"]

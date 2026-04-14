@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import datetime, timedelta, timezone
 from threading import Lock
 
 from tokenwise.backend.models.schemas import HistoryResponse, HistoryRunSummary, HistoryStats, RunResult
@@ -119,6 +120,7 @@ class HistoryStore:
             total_saved_usd=stats.total_saved_usd,
             avg_savings_pct=stats.avg_savings_pct,
             runs=runs,
+            routing_hint_breakdown=self.get_routing_hint_breakdown(),
         )
 
     def get_history_stats(self) -> HistoryStats:
@@ -179,3 +181,62 @@ class HistoryStore:
             )
         return summaries
 
+    def get_started_today_spend_utc(self) -> float:
+        now = datetime.now(timezone.utc)
+        start = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
+        end = start + timedelta(days=1)
+
+        with self._lock, self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT COALESCE(SUM(CAST(json_extract(run_stats_json, '$.actual_cost_usd') AS REAL)), 0.0) AS total
+                FROM runs
+                WHERE status IN ('completed', 'failed')
+                  AND started_at >= ?
+                  AND started_at < ?
+                """,
+                (start.isoformat(), end.isoformat()),
+            ).fetchone()
+
+        return round(float(row["total"] or 0.0), 6)
+
+    def get_routing_hint_breakdown(self) -> dict[str, dict[str, float | int]]:
+        with self._lock, self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT routing_hint, attempts_json
+                FROM subtasks
+                """
+            ).fetchall()
+
+        breakdown: dict[str, dict[str, float | int]] = {}
+        actual_totals: dict[str, float] = {}
+        baseline_totals: dict[str, float] = {}
+
+        for row in rows:
+            routing_hint = row["routing_hint"]
+            attempts = json.loads(row["attempts_json"] or "[]")
+            entry = breakdown.setdefault(
+                routing_hint,
+                {
+                    "subtask_count": 0,
+                    "avg_savings_pct": 0.0,
+                },
+            )
+            entry["subtask_count"] = int(entry["subtask_count"]) + 1
+
+            for attempt in attempts:
+                actual_totals[routing_hint] = actual_totals.get(routing_hint, 0.0) + float(attempt.get("cost_usd", 0.0))
+                baseline_totals[routing_hint] = baseline_totals.get(routing_hint, 0.0) + float(
+                    attempt.get("baseline_cost_usd", 0.0)
+                )
+
+        for routing_hint, entry in breakdown.items():
+            baseline_total = baseline_totals.get(routing_hint, 0.0)
+            actual_total = actual_totals.get(routing_hint, 0.0)
+            if baseline_total > 0:
+                entry["avg_savings_pct"] = round(((baseline_total - actual_total) / baseline_total) * 100, 2)
+            else:
+                entry["avg_savings_pct"] = 0.0
+
+        return breakdown

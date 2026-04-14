@@ -8,11 +8,13 @@ from tokenwise.backend.models.schemas import (
     RoutingHint,
     SubTask,
 )
+from tokenwise.backend.router.escalation import EscalationManager
 
 
 class TierRouter:
-    def __init__(self, registry: dict[str, object]) -> None:
+    def __init__(self, registry: dict[str, object], escalation_manager: EscalationManager) -> None:
         self.registry = registry
+        self.escalation_manager = escalation_manager
 
     def route(
         self,
@@ -27,12 +29,16 @@ class TierRouter:
             Complexity.MEDIUM: 2,
             Complexity.HIGH: 3,
         }[subtask.complexity]
+        suggested_tier = self.escalation_manager.suggested_start_tier(
+            subtask.routing_hint.value,
+            base_tier,
+        )
         minimum_tier = {
             QualityFloor.LOW: 1,
             QualityFloor.MEDIUM: 2,
             QualityFloor.HIGH: 3,
         }[quality_floor]
-        tier = 1 if force_tier_one else max(base_tier, minimum_tier)
+        tier = 1 if force_tier_one else max(suggested_tier, minimum_tier)
         provider = preferred_provider or self._provider_for_subtask(subtask)
         profile = self.registry[f"tier{tier}_{provider.value}"]
         reason = "budget cap reached; forcing Tier 1" if force_tier_one else self._reason_for_route(subtask, tier, provider)
@@ -76,13 +82,20 @@ class TierRouter:
         return self.registry[route.model_alias]
 
     def _provider_for_subtask(self, subtask: SubTask) -> Provider:
-        if subtask.routing_hint in {RoutingHint.STRUCTURED_OUTPUT, RoutingHint.INSTRUCTION_FOLLOWING}:
-            return Provider.ANTHROPIC
-        return Provider.OPENAI
+        provider_map = {
+            RoutingHint.STRUCTURED_OUTPUT: Provider.ANTHROPIC,
+            RoutingHint.INSTRUCTION_FOLLOWING: Provider.ANTHROPIC,
+            RoutingHint.CREATIVE_SYNTHESIS: Provider.ANTHROPIC,
+            RoutingHint.CODE_GENERATION: Provider.OPENAI,
+            RoutingHint.GENERAL_REASONING: Provider.OPENAI,
+        }
+        try:
+            return provider_map[subtask.routing_hint]
+        except KeyError as exc:
+            raise ValueError(f"Unsupported routing hint: {subtask.routing_hint}") from exc
 
     def _reason_for_route(self, subtask: SubTask, tier: int, provider: Provider) -> str:
         return (
             f"{subtask.complexity.value} complexity routed to Tier {tier}; "
             f"{provider.value} selected for {subtask.routing_hint.value}"
         )
-

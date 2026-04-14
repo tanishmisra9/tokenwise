@@ -13,7 +13,13 @@ class Settings(BaseSettings):
     api_host: str = Field(default="127.0.0.1", alias="TOKENWISE_API_HOST")
     api_port: int = Field(default=8000, alias="TOKENWISE_API_PORT")
     db_path: str = Field(default="tokenwise.db", alias="TOKENWISE_DB_PATH")
+    daily_budget_usd: float = Field(default=10.0, alias="TOKENWISE_DAILY_BUDGET_USD")
+    max_task_length: int = Field(default=2000, alias="TOKENWISE_MAX_TASK_LENGTH")
+    max_concurrent_runs: int = Field(default=3, alias="TOKENWISE_MAX_CONCURRENT_RUNS")
     request_timeout_seconds: float = 90.0
+    tier1_timeout_seconds: float = Field(default=15.0, alias="TOKENWISE_TIER1_TIMEOUT")
+    tier2_timeout_seconds: float = Field(default=30.0, alias="TOKENWISE_TIER2_TIMEOUT")
+    tier3_timeout_seconds: float = Field(default=90.0, alias="TOKENWISE_TIER3_TIMEOUT")
     latency_threshold_ms: int = 18_000
     recent_runs_limit: int = 8
     cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]

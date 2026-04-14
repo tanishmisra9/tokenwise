@@ -1,5 +1,5 @@
 function statusTone(status) {
-  if (status === "completed") return "tone-success";
+  if (status === "completed" || status === "completed_degraded") return "tone-success";
   if (status === "running") return "tone-live";
   if (status === "failed") return "tone-danger";
   return "tone-muted";
@@ -8,6 +8,9 @@ function statusTone(status) {
 function formatStatusLabel(status) {
   if (!status) {
     return "QUEUED";
+  }
+  if (status === "completed_degraded") {
+    return "COMPLETED";
   }
   return status.toUpperCase();
 }
@@ -25,6 +28,16 @@ function truncateLabel(description) {
     return description;
   }
   return `${words.slice(0, 6).join(" ")}…`;
+}
+
+function truncateReason(reason) {
+  if (!reason) {
+    return "";
+  }
+  if (reason.length <= 80) {
+    return reason;
+  }
+  return `${reason.slice(0, 79)}…`;
 }
 
 export default function AgentGraph({ run }) {
@@ -51,6 +64,7 @@ export default function AgentGraph({ run }) {
                 const route = liveState.route;
                 const latestAttempt = attempts.at(-1);
                 const modelLabel = latestAttempt?.model_id ?? route?.model_id ?? "Pending";
+                const latestReason = truncateReason(liveState.events?.at(-1)?.reason ?? "");
 
                 return (
                   <article className={`subtask-card ${statusTone(liveState.status)}`} key={subtask.id}>
@@ -69,6 +83,8 @@ export default function AgentGraph({ run }) {
                         <span>Attempt {latestAttempt?.attempt_number ?? 0}</span>
                         <span>{formatComplexityLabel(subtask.complexity)}</span>
                       </div>
+
+                      {latestReason ? <p className="subtask-reason">{latestReason}</p> : null}
                     </div>
                   </article>
                 );

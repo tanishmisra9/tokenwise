@@ -77,6 +77,16 @@ export default function ResultOutput({ run }) {
 
   const CopyIcon = copyState === "copied" ? Check : Copy;
   const copyLabel = copyState === "copied" ? "Copied" : "Copy";
+  const allSubtasksTerminal =
+    (run.plan?.length ?? 0) > 0 &&
+    (run.plan ?? []).every((subtask) =>
+      ["completed", "completed_degraded"].includes(run.subtasks?.[subtask.id]?.status),
+    );
+  const showComposerLoading =
+    !run.error &&
+    !run.finalOutput &&
+    ["running", "starting"].includes(run.status) &&
+    allSubtasksTerminal;
 
   return (
     <div className="result-output">
@@ -107,6 +117,13 @@ export default function ResultOutput({ run }) {
         <div className="result-shell result-error">
           <h3>Run failed</h3>
           <p>{run.error}</p>
+        </div>
+      ) : null}
+
+      {showComposerLoading ? (
+        <div className="result-shell result-loading">
+          <div className="composer-spinner" aria-hidden="true" />
+          <p className="composer-loading-copy">Composing the final response…</p>
         </div>
       ) : null}
 

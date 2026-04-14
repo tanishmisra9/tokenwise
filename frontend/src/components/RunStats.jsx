@@ -2,7 +2,38 @@ function formatUsd(value) {
   return `$${Number(value ?? 0).toFixed(4)}`;
 }
 
-export default function RunStats({ runStats }) {
+function formatLatencyLabel(latencyMs) {
+  return `${(latencyMs / 1000).toFixed(1)}s`;
+}
+
+function buildLatencySummary(subtasks) {
+  const tierStats = new Map();
+
+  for (const subtask of Object.values(subtasks ?? {})) {
+    for (const attempt of subtask.attempts ?? []) {
+      const tier = attempt?.tier;
+      const latencyMs = Number(attempt?.latency_ms ?? 0);
+      if (!tier || latencyMs <= 0) {
+        continue;
+      }
+
+      const existing = tierStats.get(tier) ?? { total: 0, count: 0 };
+      existing.total += latencyMs;
+      existing.count += 1;
+      tierStats.set(tier, existing);
+    }
+  }
+
+  return [...tierStats.entries()]
+    .sort(([leftTier], [rightTier]) => leftTier - rightTier)
+    .map(([tier, { total, count }]) => `Tier ${tier}: ${formatLatencyLabel(total / count)}`)
+    .join(" · ");
+}
+
+export default function RunStats({ run }) {
+  const runStats = run?.runStats ?? null;
+  const latencySummary = buildLatencySummary(run?.subtasks);
+
   if (!runStats) {
     return (
       <div className="run-stats">
@@ -49,6 +80,10 @@ export default function RunStats({ runStats }) {
           <span>Escalations</span>
           <strong>{runStats.escalations ?? 0}</strong>
         </div>
+        <div className="stat-card stat-card-wide">
+          <span>Avg latency / tier</span>
+          <strong>{latencySummary || "Awaiting attempts"}</strong>
+        </div>
       </div>
 
       <div className="model-usage">
@@ -62,4 +97,3 @@ export default function RunStats({ runStats }) {
     </div>
   );
 }
-

@@ -28,7 +28,11 @@ function markFailedSubtask(subtasks) {
   const runningEntry = entries.find(([, subtask]) => subtask.status === "running");
   const fallbackEntry =
     [...entries]
-      .filter(([, subtask]) => subtask.status !== "completed" && (subtask.attempts?.length ?? 0) > 0)
+      .filter(
+        ([, subtask]) =>
+          !["completed", "completed_degraded"].includes(subtask.status) &&
+          (subtask.attempts?.length ?? 0) > 0,
+      )
       .sort(([, left], [, right]) => {
         const leftAttempt = left.attempts?.at(-1)?.attempt_number ?? -1;
         const rightAttempt = right.attempts?.at(-1)?.attempt_number ?? -1;
@@ -142,7 +146,7 @@ function eventReducer(previous, event) {
   }
 
   if (event.event === "subtask_completed" && subtaskId) {
-    next.subtasks[subtaskId].status = "completed";
+    next.subtasks[subtaskId].status = payload.degraded ? "completed_degraded" : "completed";
     next.subtasks[subtaskId].output = payload.output;
     next.subtasks[subtaskId].lastTokens = payload.tokens;
     next.subtasks[subtaskId].lastCost = payload.cost_usd;
@@ -151,7 +155,7 @@ function eventReducer(previous, event) {
       index === attempts.length - 1
         ? {
             ...attempt,
-            status: "completed",
+            status: payload.degraded ? "completed_degraded" : "completed",
             cost_usd: payload.cost_usd,
             latency_ms: payload.latency_ms,
             tokens: payload.tokens,
@@ -185,7 +189,6 @@ function eventReducer(previous, event) {
 export default function App() {
   const [form, setForm] = useState({
     task: "",
-    budget_cap_usd: 0.05,
     quality_floor: "medium",
   });
   const [history, setHistory] = useState({
@@ -195,6 +198,7 @@ export default function App() {
     total_saved_usd: 0,
     avg_savings_pct: 0,
     runs: [],
+    routing_hint_breakdown: {},
   });
   const [currentRun, setCurrentRun] = useState(initialRunState);
   const [connectionStatus, setConnectionStatus] = useState("idle");
@@ -333,7 +337,7 @@ export default function App() {
         </section>
 
         <section className="panel panel-stats">
-          <RunStats runStats={currentRun.runStats} />
+          <RunStats run={currentRun} />
         </section>
 
         <section className="panel panel-history">

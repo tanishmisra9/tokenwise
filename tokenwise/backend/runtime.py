@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import time
 import uuid
 from dataclasses import dataclass, field
 
@@ -10,10 +12,13 @@ from tokenwise.backend.agents.validator import ValidatorAgent
 from tokenwise.backend.config import Settings, build_model_registry
 from tokenwise.backend.execution.runner import LLMRunner
 from tokenwise.backend.models.schemas import (
+    Complexity,
     ExecutionPlan,
+    OutputFormat,
     Provider,
     QualityFloor,
     RouteDecision,
+    RoutingHint,
     RunEvent,
     RunEventType,
     RunRequest,
@@ -28,17 +33,22 @@ from tokenwise.backend.router.tier_router import TierRouter
 from tokenwise.backend.tracker.cost import compute_cost, summarise_run_stats
 from tokenwise.backend.tracker.history import HistoryStore
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass
 class StreamState:
     backlog: list[RunEvent] = field(default_factory=list)
-    subscribers: list[asyncio.Queue] = field(default_factory=list)
+    subscribers: list[asyncio.Queue[RunEvent | None]] = field(default_factory=list)
     closed: bool = False
+    cancelled: bool = False
+    last_event_at: float = field(default_factory=time.monotonic)
 
 
 class RunEventHub:
-    def __init__(self) -> None:
+    def __init__(self, cleanup_ttl_seconds: int = 600) -> None:
         self._streams: dict[str, StreamState] = {}
+        self.cleanup_ttl_seconds = cleanup_ttl_seconds
 
     def ensure_run(self, run_id: str) -> StreamState:
         return self._streams.setdefault(run_id, StreamState())
@@ -46,18 +56,19 @@ class RunEventHub:
     async def publish(self, run_id: str, event: RunEvent) -> None:
         stream = self.ensure_run(run_id)
         stream.backlog.append(event)
+        stream.last_event_at = time.monotonic()
         for queue in list(stream.subscribers):
             await queue.put(event)
         if event.event in {RunEventType.RUN_COMPLETED, RunEventType.RUN_FAILED}:
             stream.closed = True
 
-    def subscribe(self, run_id: str) -> tuple[list[RunEvent], asyncio.Queue, bool]:
+    def subscribe(self, run_id: str) -> tuple[list[RunEvent], asyncio.Queue[RunEvent | None], bool]:
         stream = self.ensure_run(run_id)
-        queue: asyncio.Queue = asyncio.Queue()
+        queue: asyncio.Queue[RunEvent | None] = asyncio.Queue()
         stream.subscribers.append(queue)
         return list(stream.backlog), queue, stream.closed
 
-    def unsubscribe(self, run_id: str, queue: asyncio.Queue) -> None:
+    def unsubscribe(self, run_id: str, queue: asyncio.Queue[RunEvent | None]) -> None:
         stream = self._streams.get(run_id)
         if not stream:
             return
@@ -70,6 +81,31 @@ class RunEventHub:
 
     def has_run(self, run_id: str) -> bool:
         return run_id in self._streams
+
+    def cancel(self, run_id: str) -> bool:
+        stream = self._streams.get(run_id)
+        if not stream:
+            return False
+
+        stream.cancelled = True
+        stream.last_event_at = time.monotonic()
+        for queue in list(stream.subscribers):
+            queue.put_nowait(None)
+        return True
+
+    def is_cancelled(self, run_id: str) -> bool:
+        stream = self._streams.get(run_id)
+        return bool(stream and stream.cancelled)
+
+    async def cleanup_expired(self) -> None:
+        now = time.monotonic()
+        expired_run_ids = [
+            run_id
+            for run_id, stream in self._streams.items()
+            if stream.closed and now - stream.last_event_at > self.cleanup_ttl_seconds
+        ]
+        for run_id in expired_run_ids:
+            del self._streams[run_id]
 
 
 class TokenwiseCoordinator:
@@ -94,8 +130,8 @@ class TokenwiseCoordinator:
         )
         self.event_hub = event_hub or RunEventHub()
         self.runner = runner or LLMRunner(settings)
-        self.router = router or TierRouter(self.model_registry)
         self.escalation_manager = escalation_manager or EscalationManager()
+        self.router = router or TierRouter(self.model_registry, self.escalation_manager)
         meta_provider = settings.meta_agent_provider
         orchestrator_profile = self.model_registry[f"tier2_{meta_provider.value}"]
         validator_profile = self.model_registry[f"tier1_{meta_provider.value}"]
@@ -161,43 +197,71 @@ class TokenwiseCoordinator:
             )
 
             completed_outputs: dict[str, str] = {}
+            pending_subtasks = list(result.subtask_results)
 
-            for subtask_result in result.subtask_results:
-                if result.run_stats.actual_cost_usd >= request.budget_cap_usd:
-                    result.budget_locked = True
+            while pending_subtasks:
+                if self.event_hub.is_cancelled(run_id):
+                    raise asyncio.CancelledError
 
-                if result.budget_locked and not subtask_result.route.forced_by_budget:
-                    downgraded = self.router.route(
-                        subtask_result.subtask,
-                        request.quality_floor,
-                        force_tier_one=True,
+                ready_batch = [
+                    subtask_result
+                    for subtask_result in pending_subtasks
+                    if all(dependency in completed_outputs for dependency in subtask_result.subtask.depends_on)
+                ]
+
+                if not ready_batch:
+                    raise RuntimeError("No executable subtasks found; execution plan may contain unresolved dependencies.")
+
+                batch_context = dict(completed_outputs)
+                batch_tasks = []
+
+                for subtask_result in ready_batch:
+                    if result.run_stats.actual_cost_usd >= request.budget_cap_usd:
+                        result.budget_locked = True
+
+                    if result.budget_locked and not subtask_result.route.forced_by_budget:
+                        downgraded = self.router.route(
+                            subtask_result.subtask,
+                            request.quality_floor,
+                            force_tier_one=True,
+                        )
+                        await self._emit(
+                            run_id,
+                            RunEventType.SUBTASK_ESCALATED,
+                            {
+                                "subtask_id": subtask_result.subtask.id,
+                                "action": "budget_lock",
+                                "reason": "Run budget reached; unstarted subtasks forced to Tier 1.",
+                                "from_route": subtask_result.route.model_dump(mode="json"),
+                                "to_route": downgraded.model_dump(mode="json"),
+                            },
+                        )
+                        subtask_result.route = downgraded
+
+                    batch_tasks.append(
+                        self._execute_subtask(
+                            run_id=run_id,
+                            request=request,
+                            result=result,
+                            subtask_result=subtask_result,
+                            completed_outputs=batch_context,
+                        )
                     )
-                    await self._emit(
-                        run_id,
-                        RunEventType.SUBTASK_ESCALATED,
-                        {
-                            "subtask_id": subtask_result.subtask.id,
-                            "action": "budget_lock",
-                            "reason": "Run budget reached; unstarted subtasks forced to Tier 1.",
-                            "from_route": subtask_result.route.model_dump(mode="json"),
-                            "to_route": downgraded.model_dump(mode="json"),
-                        },
-                    )
-                    subtask_result.route = downgraded
 
-                success = await self._execute_subtask(
-                    run_id=run_id,
-                    request=request,
-                    result=result,
-                    subtask_result=subtask_result,
-                    completed_outputs=completed_outputs,
-                )
+                batch_successes = await asyncio.gather(*batch_tasks)
+                if self.event_hub.is_cancelled(run_id):
+                    raise asyncio.CancelledError
                 result.run_stats = summarise_run_stats(result.subtask_results)
-                if not success:
-                    raise RuntimeError(result.error or f"Subtask {subtask_result.subtask.id} failed.")
-                completed_outputs[subtask_result.subtask.id] = subtask_result.final_output or ""
 
-            result.final_output = await self.composer.compose(result.task, result.subtask_results)
+                for subtask_result, success in zip(ready_batch, batch_successes, strict=True):
+                    pending_subtasks.remove(subtask_result)
+                    if not success:
+                        raise RuntimeError(result.error or f"Subtask {subtask_result.subtask.id} failed.")
+                    completed_outputs[subtask_result.subtask.id] = subtask_result.final_output or ""
+
+            if self.event_hub.is_cancelled(run_id):
+                raise asyncio.CancelledError
+            result.final_output = await self._compose_final_output(result)
             result.status = "completed"
             result.completed_at = utcnow_iso()
             result.run_stats = summarise_run_stats(result.subtask_results)
@@ -210,6 +274,28 @@ class TokenwiseCoordinator:
                 RunEventType.RUN_COMPLETED,
                 {
                     "final_output": result.final_output,
+                    "run_stats": result.run_stats.model_dump(mode="json"),
+                    "history_stats": history.model_dump(mode="json"),
+                },
+            )
+        except asyncio.CancelledError:
+            result.status = "failed"
+            result.completed_at = utcnow_iso()
+            result.error = "Run cancelled by user"
+            result.run_stats = summarise_run_stats(result.subtask_results)
+            self.history_store.write_run(result)
+            history = self.history_store.get_history_stats()
+            result.history_stats = history
+            await self._emit(
+                run_id,
+                RunEventType.RUN_FAILED,
+                {
+                    "error": result.error,
+                    "partial_outputs": {
+                        subtask_result.subtask.id: subtask_result.final_output
+                        for subtask_result in result.subtask_results
+                        if subtask_result.final_output
+                    },
                     "run_stats": result.run_stats.model_dump(mode="json"),
                     "history_stats": history.model_dump(mode="json"),
                 },
@@ -258,6 +344,9 @@ class TokenwiseCoordinator:
         route = subtask_result.route
 
         while True:
+            if self.event_hub.is_cancelled(run_id):
+                raise asyncio.CancelledError
+
             attempt_number = len(subtask_result.attempts) + 1
             await self._emit(
                 run_id,
@@ -282,19 +371,28 @@ class TokenwiseCoordinator:
             )
 
             try:
-                response = await self.runner.generate(
-                    provider=route.provider,
-                    model_id=route.model_id,
-                    system_prompt=self._build_subtask_system_prompt(subtask_result.subtask),
-                    user_prompt=self._build_subtask_user_prompt(
-                        request.task,
-                        subtask_result.subtask,
-                        completed_outputs,
-                    ),
-                    max_output_tokens=950 if subtask_result.subtask.output_format.value != "json" else 700,
-                    temperature=0.2,
-                    json_mode=subtask_result.subtask.output_format.value == "json" and route.provider == Provider.OPENAI,
-                )
+                timeout_seconds = self._timeout_for_tier(route.tier)
+                try:
+                    response = await asyncio.wait_for(
+                        self.runner.generate(
+                            provider=route.provider,
+                            model_id=route.model_id,
+                            system_prompt=self._build_subtask_system_prompt(subtask_result.subtask),
+                            user_prompt=self._build_subtask_user_prompt(
+                                request.task,
+                                subtask_result.subtask,
+                                completed_outputs,
+                            ),
+                            max_output_tokens=950 if subtask_result.subtask.output_format.value != "json" else 700,
+                            temperature=0.2,
+                            json_mode=subtask_result.subtask.output_format.value == "json" and route.provider == Provider.OPENAI,
+                        ),
+                        timeout=timeout_seconds,
+                    )
+                except asyncio.TimeoutError as exc:
+                    raise RuntimeError(
+                        f"Subtask {subtask_result.subtask.id} timed out after {timeout_seconds:.1f}s at Tier {route.tier}."
+                    ) from exc
                 attempt.completed_at = utcnow_iso()
                 attempt.usage = response.usage
                 attempt.latency_ms = response.latency_ms
@@ -329,7 +427,31 @@ class TokenwiseCoordinator:
                     provider_fallbacks += 1
                     continue
 
-                validation = await self.validator.validate(subtask_result.subtask, attempt.output_text)
+                if result.budget_locked and route.forced_by_budget:
+                    subtask_result.final_output = attempt.output_text
+                    subtask_result.status = "completed_degraded"
+                    await self._emit(
+                        run_id,
+                        RunEventType.SUBTASK_COMPLETED,
+                        {
+                            "subtask_id": subtask_result.subtask.id,
+                            "output": subtask_result.final_output,
+                            "tokens": attempt.usage.model_dump(mode="json"),
+                            "cost_usd": attempt.cost_usd,
+                            "baseline_cost_usd": attempt.baseline_cost_usd,
+                            "latency_ms": attempt.latency_ms,
+                            "run_stats": summarise_run_stats(result.subtask_results).model_dump(mode="json"),
+                            "degraded": True,
+                        },
+                    )
+                    return True
+
+                validation = await self.validator.validate(
+                    subtask_result.subtask,
+                    attempt.output_text,
+                    subtask_result.subtask.routing_hint,
+                    subtask_result.subtask.output_format,
+                )
                 attempt.validation = validation
 
                 if validation.passed:
@@ -349,6 +471,11 @@ class TokenwiseCoordinator:
                         },
                     )
                     return True
+
+                self.escalation_manager.record_failure(
+                    subtask_result.subtask.routing_hint.value,
+                    route.tier,
+                )
 
                 if self.escalation_manager.should_retry_same_model(attempt_number, validation_failed=True) and not retry_same_model_used:
                     retry_same_model_used = True
@@ -392,6 +519,10 @@ class TokenwiseCoordinator:
                 attempt.completed_at = utcnow_iso()
                 attempt.error = str(exc)
                 subtask_result.attempts.append(attempt)
+                self.escalation_manager.record_failure(
+                    subtask_result.subtask.routing_hint.value,
+                    route.tier,
+                )
 
                 if not route.forced_by_budget and self.escalation_manager.should_switch_provider(provider_fallbacks):
                     new_route = self.router.alternate_provider(route)
@@ -461,6 +592,54 @@ class TokenwiseCoordinator:
                 run_id=run_id,
                 payload=payload,
             ),
+        )
+
+    async def _compose_final_output(self, result: RunResult) -> str:
+        first_output = await self.composer.compose(result.task, result.subtask_results)
+        first_validation = await self.validator.validate(
+            self._composer_validation_subtask(),
+            first_output,
+            RoutingHint.CREATIVE_SYNTHESIS,
+            OutputFormat.MARKDOWN,
+        )
+        if first_validation.passed:
+            return first_output
+
+        revised_output = await self.composer.compose(
+            result.task,
+            result.subtask_results,
+            revision_feedback=first_validation.reason,
+        )
+        revised_validation = await self.validator.validate(
+            self._composer_validation_subtask(),
+            revised_output,
+            RoutingHint.CREATIVE_SYNTHESIS,
+            OutputFormat.MARKDOWN,
+        )
+        if revised_validation.passed:
+            return revised_output
+
+        logger.warning(
+            "Composer revision failed quality validation; using first attempt. First reason: %s. Retry reason: %s",
+            first_validation.reason,
+            revised_validation.reason,
+        )
+        return first_output
+
+    def _timeout_for_tier(self, tier: int) -> float:
+        return {
+            1: self.settings.tier1_timeout_seconds,
+            2: self.settings.tier2_timeout_seconds,
+            3: self.settings.tier3_timeout_seconds,
+        }.get(tier, self.settings.request_timeout_seconds)
+
+    def _composer_validation_subtask(self) -> SubTask:
+        return SubTask(
+            id="composer",
+            description="Final composed output",
+            complexity=Complexity.MEDIUM,
+            routing_hint=RoutingHint.CREATIVE_SYNTHESIS,
+            output_format=OutputFormat.MARKDOWN,
         )
 
     def _build_subtask_system_prompt(self, subtask: SubTask) -> str:

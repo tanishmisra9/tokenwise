@@ -3,9 +3,10 @@ from __future__ import annotations
 from collections import defaultdict, deque
 from datetime import datetime, timezone
 from enum import Enum
+import os
 from typing import Any
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 def utcnow_iso() -> str:
@@ -146,8 +147,16 @@ class ExecutionPlan(BaseModel):
 
 class RunRequest(BaseModel):
     task: str = Field(min_length=1)
-    budget_cap_usd: float = Field(default=0.05, gt=0)
+    budget_cap_usd: float = Field(default=999.0, gt=0)
     quality_floor: QualityFloor = QualityFloor.MEDIUM
+
+    @field_validator("task")
+    @classmethod
+    def validate_task_length(cls, value: str) -> str:
+        max_task_length = int(os.getenv("TOKENWISE_MAX_TASK_LENGTH", "2000"))
+        if len(value) > max_task_length:
+            raise ValueError(f"Task must be {max_task_length} characters or fewer.")
+        return value
 
 
 class RunAcceptedResponse(BaseModel):
@@ -229,6 +238,7 @@ class HistoryResponse(BaseModel):
     total_saved_usd: float
     avg_savings_pct: float
     runs: list[HistoryRunSummary]
+    routing_hint_breakdown: dict[str, dict[str, float | int]] = Field(default_factory=dict)
 
 
 class RunResult(BaseModel):
@@ -252,4 +262,3 @@ class RunEvent(BaseModel):
     run_id: str
     timestamp: str = Field(default_factory=utcnow_iso)
     payload: dict[str, Any] = Field(default_factory=dict)
-
