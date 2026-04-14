@@ -1,12 +1,5 @@
-[build]
-builder = "nixpacks"
-buildCommand = "npm install --prefix frontend && npm run build --prefix frontend && uv sync --no-dev --frozen"
-
 [deploy]
 startCommand = "uv run uvicorn tokenwise.backend.main:app --host 0.0.0.0 --port $PORT"
 healthcheckPath = "/health"
 healthcheckTimeout = 30
 restartPolicyType = "on_failure"
-
-[variables]
-NIXPACKS_NODE_VERSION = "20"
