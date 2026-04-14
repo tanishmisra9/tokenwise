@@ -5,8 +5,6 @@ import ResultOutput from "./components/ResultOutput";
 import RunStats from "./components/RunStats";
 import TaskInput from "./components/TaskInput";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
-
 const initialRunState = {
   runId: null,
   status: "idle",
@@ -71,9 +69,8 @@ function markFailedSubtask(subtasks) {
 }
 
 function buildWebSocketUrl(runId) {
-  const url = new URL(`/runs/${runId}`, API_BASE_URL);
-  url.protocol = API_BASE_URL.startsWith("https://") ? "wss:" : "ws:";
-  return url.toString();
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocol}//${window.location.host}/runs/${runId}`;
 }
 
 function eventReducer(previous, event) {
@@ -220,7 +217,7 @@ export default function App() {
 
     async function loadHistory() {
       try {
-        const response = await fetch(`${API_BASE_URL}/history`);
+        const response = await fetch("/history");
         const payload = await response.json();
         if (!cancelled) {
           startTransition(() => setHistory(payload));
@@ -248,7 +245,7 @@ export default function App() {
     setCurrentRun({ ...initialRunState, status: "starting" });
 
     try {
-      const response = await fetch(`${API_BASE_URL}/run`, {
+      const response = await fetch("/run", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -299,7 +296,7 @@ export default function App() {
 
   async function refreshHistory() {
     try {
-      const response = await fetch(`${API_BASE_URL}/history`);
+      const response = await fetch("/history");
       const payload = await response.json();
       startTransition(() => setHistory(payload));
     } catch (fetchError) {
