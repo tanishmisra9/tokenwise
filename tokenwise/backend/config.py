@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from tokenwise.backend.models.schemas import ModelProfile, Provider, TokenPricing
@@ -25,7 +25,14 @@ class Settings(BaseSettings):
     tier3_max_output_tokens: int = Field(default=4000, alias="TOKENWISE_TIER3_MAX_OUTPUT_TOKENS")
     latency_threshold_ms: int = 18_000
     recent_runs_limit: int = 8
-    cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    cors_origins: list[str] = Field(
+        default=[
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "https://tokenwise-production.up.railway.app",
+        ],
+        alias="TOKENWISE_CORS_ORIGINS",
+    )
 
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
     anthropic_api_key: str | None = Field(default=None, alias="ANTHROPIC_API_KEY")
@@ -59,6 +66,13 @@ class Settings(BaseSettings):
     @property
     def resolved_db_path(self) -> Path:
         return Path(self.db_path).expanduser().resolve()
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, value: str | list[str]) -> list[str] | str:
+        if isinstance(value, str):
+            return [origin.strip() for origin in value.split(",") if origin.strip()]
+        return value
 
     def require_provider_keys(self) -> None:
         missing = []
