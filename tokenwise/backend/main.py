@@ -14,7 +14,7 @@ from slowapi.extension import _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 
 from tokenwise.backend.config import Settings
-from tokenwise.backend.models.schemas import RunAcceptedResponse, RunRequest
+from tokenwise.backend.models.schemas import RunAcceptedResponse, RunEventType, RunRequest, utcnow_iso
 from tokenwise.backend.runtime import TokenwiseCoordinator
 
 
@@ -114,12 +114,37 @@ def create_app(
 
         await websocket.accept()
         backlog, queue, closed = app.state.coordinator.event_hub.subscribe(run_id)
+        send_lock = asyncio.Lock()
+        keepalive_task: asyncio.Task[None] | None = None
+
+        async def send_json(payload: dict) -> None:
+            async with send_lock:
+                await websocket.send_json(payload)
+
+        async def keepalive_loop() -> None:
+            try:
+                while not app.state.coordinator.event_hub.is_closed(run_id):
+                    await asyncio.sleep(30)
+                    if app.state.coordinator.event_hub.is_closed(run_id):
+                        break
+                    await send_json(
+                        {
+                            "event": "ping",
+                            "run_id": run_id,
+                            "timestamp": utcnow_iso(),
+                            "payload": {},
+                        }
+                    )
+            except (WebSocketDisconnect, RuntimeError):
+                return
 
         try:
             for event in backlog:
-                await websocket.send_json(event.model_dump(mode="json"))
+                await send_json(event.model_dump(mode="json"))
             if closed:
                 return
+
+            keepalive_task = asyncio.create_task(keepalive_loop())
 
             while True:
                 if app.state.coordinator.event_hub.is_closed(run_id) and queue.empty():
@@ -129,10 +154,16 @@ def create_app(
                     if app.state.coordinator.event_hub.is_closed(run_id):
                         break
                     continue
-                await websocket.send_json(event.model_dump(mode="json"))
+                await send_json(event.model_dump(mode="json"))
+                if event.event in {RunEventType.RUN_COMPLETED, RunEventType.RUN_FAILED}:
+                    break
         except WebSocketDisconnect:
             app.state.coordinator.event_hub.unsubscribe(run_id, queue)
         finally:
+            if keepalive_task is not None:
+                keepalive_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await keepalive_task
             app.state.coordinator.event_hub.unsubscribe(run_id, queue)
 
     app.mount("/", StaticFiles(directory="frontend/dist", html=True), name="frontend")

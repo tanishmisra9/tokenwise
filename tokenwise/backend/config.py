@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     tier2_timeout_seconds: float = Field(default=30.0, alias="TOKENWISE_TIER2_TIMEOUT")
     tier3_timeout_seconds: float = Field(default=90.0, alias="TOKENWISE_TIER3_TIMEOUT")
     tier1_max_output_tokens: int = Field(default=1500, alias="TOKENWISE_TIER1_MAX_OUTPUT_TOKENS")
-    tier2_max_output_tokens: int = Field(default=2000, alias="TOKENWISE_TIER2_MAX_OUTPUT_TOKENS")
-    tier3_max_output_tokens: int = Field(default=4000, alias="TOKENWISE_TIER3_MAX_OUTPUT_TOKENS")
+    tier2_max_output_tokens: int = Field(default=3000, alias="TOKENWISE_TIER2_MAX_OUTPUT_TOKENS")
+    tier3_max_output_tokens: int = Field(default=6000, alias="TOKENWISE_TIER3_MAX_OUTPUT_TOKENS")
     latency_threshold_ms: int = 18_000
     recent_runs_limit: int = 8
     cors_origins: list[str] = Field(
