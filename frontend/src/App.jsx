@@ -19,6 +19,14 @@ const initialRunState = {
   error: "",
 };
 
+function formatConnectionLabel(status) {
+  if (status === "streaming") return "Connected";
+  if (status === "starting") return "Starting";
+  if (status === "error") return "Error";
+  if (status === "closed") return "Closed";
+  return "Idle";
+}
+
 function markFailedSubtask(subtasks) {
   const entries = Object.entries(subtasks ?? {});
   if (!entries.length) {
@@ -204,6 +212,8 @@ export default function App() {
   const [connectionStatus, setConnectionStatus] = useState("idle");
   const [error, setError] = useState("");
   const socketRef = useRef(null);
+  const showLiveExecution =
+    (currentRun.plan?.length ?? 0) > 0 && ["starting", "running"].includes(currentRun.status);
 
   useEffect(() => {
     let cancelled = false;
@@ -300,47 +310,56 @@ export default function App() {
   return (
     <div className="app-shell">
       <div className="backdrop-grid" />
-      <header className="hero">
-        <div className="hero-copy">
-          <p className="eyebrow">Tokenwise orchestration MVP</p>
-          <h1>Route complex work through the cheapest model that can actually finish it.</h1>
-          <p className="lede">
-            Live decomposition, tier-aware retries, validator-driven escalation, and a running
-            savings ledger in one dashboard.
-          </p>
-        </div>
-        <div className="hero-metrics">
-          <div className="metric-chip">
-            <span>Connection</span>
-            <strong>{connectionStatus}</strong>
+      <header className="hero-bar">
+        <div className="hero-inner">
+          <div className="brand-wordmark" aria-label="Tokenwise">
+            <span className="brand-text">TOKENWISE</span>
+            <span className="brand-dot" aria-hidden="true" />
           </div>
-          <div className="metric-chip">
-            <span>Total saved</span>
-            <strong>${Number(history.total_saved_usd ?? 0).toFixed(4)}</strong>
+          <div className="hero-status">
+            <div className={`connection-pill state-${connectionStatus}`}>
+              <span className="connection-pill-dot" aria-hidden="true" />
+              <span>{formatConnectionLabel(connectionStatus)}</span>
+            </div>
+            <div className="saved-counter">
+              <span>Total saved</span>
+              <strong>${Number(history.total_saved_usd ?? 0).toFixed(4)}</strong>
+            </div>
           </div>
         </div>
       </header>
 
-      {error ? <div className="alert-banner">{error}</div> : null}
+      {error ? (
+        <div className="content-frame">
+          <div className="alert-banner">{error}</div>
+        </div>
+      ) : null}
 
-      <main className="dashboard-grid">
-        <section className="panel panel-input">
-          <TaskInput form={form} setForm={setForm} onSubmit={handleRunSubmit} isRunning={currentRun.status === "running" || currentRun.status === "starting"} />
+      <main className="dashboard-flow">
+        <section className="content-section panel panel-input">
+          <TaskInput
+            form={form}
+            setForm={setForm}
+            onSubmit={handleRunSubmit}
+            isRunning={currentRun.status === "running" || currentRun.status === "starting"}
+          />
         </section>
 
-        <section className="panel panel-agent">
-          <AgentGraph run={currentRun} />
-        </section>
+        {showLiveExecution ? (
+          <section className="content-section panel panel-agent">
+            <AgentGraph run={currentRun} />
+          </section>
+        ) : null}
 
-        <section className="panel panel-result">
+        <section className="content-section panel panel-result">
           <ResultOutput run={currentRun} />
         </section>
 
-        <section className="panel panel-stats">
+        <section className="content-section panel panel-stats">
           <RunStats run={currentRun} />
         </section>
 
-        <section className="panel panel-history">
+        <section className="content-section panel panel-history">
           <HistoryPanel history={history} />
         </section>
       </main>

@@ -27,38 +27,35 @@ function buildBreakdownRows(history) {
 
 export default function HistoryPanel({ history }) {
   const breakdownRows = buildBreakdownRows(history);
-  const maxPositiveSavings = Math.max(
-    1,
-    ...breakdownRows.map((row) => Math.max(0, row.avgSavingsPct)),
-  );
+  const maxPositiveSavings = Math.max(1, ...breakdownRows.map((row) => Math.max(0, row.avgSavingsPct)));
 
   return (
     <div className="history-panel">
-      <div className="panel-heading">
+      <div className="section-heading section-heading-compact">
         <p className="eyebrow">Historical totals</p>
-        <h2>Cumulative savings across every run.</h2>
+        <h2>Cumulative savings</h2>
       </div>
 
-      <div className="stats-grid">
-        <div className="stat-card">
-          <span>Total runs</span>
+      <div className="history-summary-row">
+        <div className="history-summary-item">
           <strong>{history.total_runs ?? 0}</strong>
+          <span>Total runs</span>
         </div>
-        <div className="stat-card">
-          <span>Total tokens</span>
+        <div className="history-summary-item">
           <strong>{Number(history.total_tokens ?? 0).toLocaleString()}</strong>
+          <span>Total tokens</span>
         </div>
-        <div className="stat-card">
-          <span>Total spent</span>
+        <div className="history-summary-item">
           <strong>{formatUsd(history.total_spent_usd)}</strong>
+          <span>Total spent</span>
         </div>
-        <div className="stat-card">
-          <span>Total saved</span>
+        <div className="history-summary-item">
           <strong>{formatUsd(history.total_saved_usd)}</strong>
+          <span>Total saved</span>
         </div>
-        <div className="stat-card">
-          <span>Avg savings/run</span>
+        <div className="history-summary-item">
           <strong>{Number(history.avg_savings_pct ?? 0).toFixed(2)}%</strong>
+          <span>Avg savings/run</span>
         </div>
       </div>
 
@@ -70,31 +67,24 @@ export default function HistoryPanel({ history }) {
         {breakdownRows.length ? (
           <div className="history-breakdown-list">
             {breakdownRows.map((row) => {
-              const barWidth = Math.max(0, row.avgSavingsPct) / maxPositiveSavings * 100;
+              const barWidth = (Math.max(0, row.avgSavingsPct) / maxPositiveSavings) * 100;
 
               return (
                 <div className="history-breakdown-row" key={row.hint}>
                   <div className="history-breakdown-copy">
                     <strong>{row.label}</strong>
-                    <span>
-                      {row.subtaskCount} subtasks · {row.avgSavingsPct.toFixed(2)}%
-                    </span>
+                    <span>{row.subtaskCount} subtasks</span>
                   </div>
-                  <svg
-                    className="history-breakdown-chart"
-                    viewBox="0 0 100 14"
-                    preserveAspectRatio="none"
-                    aria-hidden="true"
-                  >
-                    <rect x="0" y="1" width="100" height="12" rx="6" fill="var(--surface-strong)" />
-                    <rect x="0" y="1" width={barWidth} height="12" rx="6" fill="var(--text-primary)" />
-                  </svg>
+                  <div className="history-breakdown-bar">
+                    <div className="history-breakdown-fill" style={{ width: `${barWidth}%` }} />
+                  </div>
+                  <div className="history-breakdown-value">{row.avgSavingsPct.toFixed(2)}%</div>
                 </div>
               );
             })}
           </div>
         ) : (
-          <div className="empty-state history-breakdown-empty">
+          <div className="empty-state empty-state-inline">
             <p>Routing-hint savings appear here after completed runs accumulate.</p>
           </div>
         )}

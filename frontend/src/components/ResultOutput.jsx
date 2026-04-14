@@ -90,7 +90,7 @@ export default function ResultOutput({ run }) {
 
   return (
     <div className="result-output">
-      <div className="panel-heading result-heading">
+      <div className="section-heading result-heading">
         <div>
           <p className="eyebrow">Final output</p>
           <h2>Composed response</h2>
@@ -108,7 +108,7 @@ export default function ResultOutput({ run }) {
       </div>
 
       {run.status === "idle" || run.status === "starting" ? (
-        <div className="empty-state">
+        <div className="empty-state empty-state-inline">
           <p>The composed answer lands here after the subtasks complete.</p>
         </div>
       ) : null}

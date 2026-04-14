@@ -6,6 +6,12 @@ function formatUsdRange(value) {
   return value.toFixed(2);
 }
 
+const QUALITY_OPTIONS = [
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+];
+
 export default function TaskInput({ form, setForm, onSubmit, isRunning }) {
   const charCount = form.task.length;
   const estimatedSubtasks = estimateSubtasks(charCount);
@@ -14,12 +20,11 @@ export default function TaskInput({ form, setForm, onSubmit, isRunning }) {
 
   return (
     <form className="task-form" onSubmit={onSubmit}>
-      <div className="panel-heading">
-        <p className="eyebrow">New run</p>
-        <h2>Paste the work and let the engine route it.</h2>
+      <div className="section-heading task-heading">
+        <h2>Give Tokenwise the work. It handles the routing, retries, and savings discipline.</h2>
       </div>
 
-      <label className="field">
+      <label className="field task-field">
         <span>Task</span>
         <textarea
           value={form.task}
@@ -28,23 +33,32 @@ export default function TaskInput({ form, setForm, onSubmit, isRunning }) {
           rows={8}
           required
         />
-        <p className="field-help task-estimate">
-          ~{charCount} chars · Est. {estimatedSubtasks} subtasks · ~$
-          {formatUsdRange(lowEstimate)}–${formatUsdRange(highEstimate)}
-        </p>
       </label>
 
-      <label className="field">
-        <span>Quality floor</span>
-        <select
-          value={form.quality_floor}
-          onChange={(event) => setForm((previous) => ({ ...previous, quality_floor: event.target.value }))}
-        >
-          <option value="low">Low</option>
-          <option value="medium">Medium</option>
-          <option value="high">High</option>
-        </select>
-      </label>
+      <div className="quality-control">
+        <span className="quality-label">Quality floor</span>
+        <div className="segmented-control" role="radiogroup" aria-label="Quality floor">
+          {QUALITY_OPTIONS.map((option) => {
+            const isActive = form.quality_floor === option.value;
+            return (
+              <button
+                key={option.value}
+                className={`segmented-option ${isActive ? "is-active" : ""}`}
+                type="button"
+                aria-pressed={isActive}
+                onClick={() => setForm((previous) => ({ ...previous, quality_floor: option.value }))}
+              >
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <p className="field-help task-estimate">
+        ~{charCount} chars · Est. {estimatedSubtasks} subtasks · ~$
+        {formatUsdRange(lowEstimate)}–${formatUsdRange(highEstimate)}
+      </p>
 
       <button className="submit-button" type="submit" disabled={isRunning}>
         {isRunning ? "Running orchestration..." : "Launch run"}
