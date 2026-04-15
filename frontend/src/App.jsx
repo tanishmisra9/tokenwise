@@ -7,6 +7,11 @@ import TaskInput from "./components/TaskInput";
 
 const RECONNECT_DELAY_MS = 2000;
 const MAX_RECONNECT_ATTEMPTS = 5;
+const LEDGER_REVEAL_DELAY_MS = 150;
+
+function isTerminalStatus(status) {
+  return ["completed", "failed", "cancelled"].includes(status);
+}
 
 const initialRunState = {
   runId: null,
@@ -180,10 +185,20 @@ function eventReducer(previous, event) {
     next.finalOutput = payload.final_output ?? "";
     next.runStats = payload.run_stats ?? null;
     next.historyStats = payload.history_stats ?? null;
+    next.error = "";
     return next;
   }
 
   if (event.event === "run_failed") {
+    if (payload.error === "Run cancelled by user") {
+      next.status = "cancelled";
+      next.error = "";
+      next.finalOutput = "";
+      next.runStats = null;
+      next.historyStats = payload.history_stats ?? null;
+      return next;
+    }
+
     next.status = "failed";
     next.error = payload.error ?? "Run failed.";
     next.subtasks = markFailedSubtask(next.subtasks);
@@ -212,14 +227,30 @@ export default function App() {
   const [currentRun, setCurrentRun] = useState(initialRunState);
   const [connectionStatus, setConnectionStatus] = useState("idle");
   const [error, setError] = useState("");
+  const [liveExecutionVisible, setLiveExecutionVisible] = useState(false);
+  const [resultVisible, setResultVisible] = useState(false);
+  const [statsVisible, setStatsVisible] = useState(false);
+  const [isStopping, setIsStopping] = useState(false);
   const socketRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
+  const statsRevealTimeoutRef = useRef(null);
   const reconnectAttemptsRef = useRef(0);
   const activeRunIdRef = useRef(null);
   const terminalEventReceivedRef = useRef(false);
   const socketGenerationRef = useRef(0);
-  const showLiveExecution =
-    (currentRun.plan?.length ?? 0) > 0 && ["starting", "running"].includes(currentRun.status);
+  const hasStartedSubtask = Object.values(currentRun.subtasks ?? {}).some(
+    (subtask) => (subtask.attempts?.length ?? 0) > 0,
+  );
+  const isRunBusy = currentRun.status !== "idle" && !isTerminalStatus(currentRun.status);
+  const canStop = Boolean(currentRun.runId) && !isTerminalStatus(currentRun.status);
+  const showLiveExecution = liveExecutionVisible && (currentRun.plan?.length ?? 0) > 0;
+
+  function clearStatsRevealTimeout() {
+    if (statsRevealTimeoutRef.current) {
+      window.clearTimeout(statsRevealTimeoutRef.current);
+      statsRevealTimeoutRef.current = null;
+    }
+  }
 
   function clearReconnectTimeout() {
     if (reconnectTimeoutRef.current) {
@@ -247,6 +278,28 @@ export default function App() {
       socket.close();
     }
   }
+
+  useEffect(() => {
+    if (hasStartedSubtask) {
+      setLiveExecutionVisible(true);
+    }
+  }, [hasStartedSubtask]);
+
+  useEffect(() => {
+    clearStatsRevealTimeout();
+
+    if (currentRun.status === "completed" && currentRun.finalOutput) {
+      setResultVisible(true);
+      statsRevealTimeoutRef.current = window.setTimeout(() => {
+        setStatsVisible(true);
+      }, LEDGER_REVEAL_DELAY_MS);
+      return () => clearStatsRevealTimeout();
+    }
+
+    setResultVisible(false);
+    setStatsVisible(false);
+    return () => clearStatsRevealTimeout();
+  }, [currentRun.status, currentRun.finalOutput]);
 
   function scheduleReconnect(runId) {
     if (terminalEventReceivedRef.current) {
@@ -378,6 +431,7 @@ export default function App() {
     loadHistory();
     return () => {
       cancelled = true;
+      clearStatsRevealTimeout();
       closeSocket();
     };
   }, []);
@@ -385,10 +439,15 @@ export default function App() {
   async function handleRunSubmit(event) {
     event.preventDefault();
     setError("");
+    setIsStopping(false);
     closeSocket();
+    clearStatsRevealTimeout();
     reconnectAttemptsRef.current = 0;
     terminalEventReceivedRef.current = false;
     activeRunIdRef.current = null;
+    setLiveExecutionVisible(false);
+    setResultVisible(false);
+    setStatsVisible(false);
     setConnectionStatus("starting");
     setCurrentRun({ ...initialRunState, status: "starting" });
 
@@ -418,6 +477,46 @@ export default function App() {
       reconnectAttemptsRef.current = 0;
       terminalEventReceivedRef.current = true;
       setCurrentRun({ ...initialRunState, status: "failed", error: submitError.message });
+    }
+  }
+
+  async function handleStopRun() {
+    const runId = activeRunIdRef.current ?? currentRun.runId;
+    if (!runId || isStopping) {
+      return;
+    }
+
+    setIsStopping(true);
+    setError("");
+
+    try {
+      const response = await fetch(`/runs/${runId}`, { method: "DELETE" });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.detail ?? "Unable to stop run.");
+      }
+
+      terminalEventReceivedRef.current = true;
+      reconnectAttemptsRef.current = 0;
+      clearReconnectTimeout();
+      clearStatsRevealTimeout();
+      closeSocket();
+      activeRunIdRef.current = runId;
+      setConnectionStatus("closed");
+      setResultVisible(false);
+      setStatsVisible(false);
+      setCurrentRun((previous) => ({
+        ...previous,
+        status: "cancelled",
+        finalOutput: "",
+        runStats: null,
+        historyStats: null,
+        error: "",
+      }));
+    } catch (stopError) {
+      setError(stopError.message);
+    } finally {
+      setIsStopping(false);
     }
   }
 
@@ -465,23 +564,30 @@ export default function App() {
             form={form}
             setForm={setForm}
             onSubmit={handleRunSubmit}
-            isRunning={currentRun.status === "running" || currentRun.status === "starting"}
+            onStop={handleStopRun}
+            isRunning={isRunBusy || isStopping}
+            canStop={canStop}
+            isStopping={isStopping}
           />
         </section>
 
         {showLiveExecution ? (
-          <section className="content-section panel panel-agent">
+          <section className="content-section panel panel-agent section-reveal">
             <AgentGraph run={currentRun} />
           </section>
         ) : null}
 
-        <section className="content-section panel panel-result">
-          <ResultOutput run={currentRun} />
-        </section>
+        {resultVisible ? (
+          <section className="content-section panel panel-result section-reveal">
+            <ResultOutput run={currentRun} />
+          </section>
+        ) : null}
 
-        <section className="content-section panel panel-stats">
-          <RunStats run={currentRun} />
-        </section>
+        {statsVisible ? (
+          <section className="content-section panel panel-stats section-reveal">
+            <RunStats run={currentRun} />
+          </section>
+        ) : null}
 
         <section className="content-section panel panel-history">
           <HistoryPanel history={history} />

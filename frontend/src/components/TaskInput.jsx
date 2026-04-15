@@ -12,7 +12,7 @@ const QUALITY_OPTIONS = [
   { value: "high", label: "High" },
 ];
 
-export default function TaskInput({ form, setForm, onSubmit, isRunning }) {
+export default function TaskInput({ form, setForm, onSubmit, onStop, isRunning, canStop, isStopping }) {
   const charCount = form.task.length;
   const estimatedSubtasks = estimateSubtasks(charCount);
   const lowEstimate = estimatedSubtasks * 0.00038;
@@ -35,34 +35,44 @@ export default function TaskInput({ form, setForm, onSubmit, isRunning }) {
         />
       </label>
 
-      <div className="quality-control">
-        <span className="quality-label">Quality floor</span>
-        <div className="segmented-control" role="radiogroup" aria-label="Quality floor">
-          {QUALITY_OPTIONS.map((option) => {
-            const isActive = form.quality_floor === option.value;
-            return (
-              <button
-                key={option.value}
-                className={`segmented-option ${isActive ? "is-active" : ""}`}
-                type="button"
-                aria-pressed={isActive}
-                onClick={() => setForm((previous) => ({ ...previous, quality_floor: option.value }))}
-              >
-                {option.label}
-              </button>
-            );
-          })}
+      <div className="task-controls">
+        <div className="quality-control">
+          <span className="quality-label">Quality floor</span>
+          <div className="segmented-control" role="radiogroup" aria-label="Quality floor">
+            {QUALITY_OPTIONS.map((option) => {
+              const isActive = form.quality_floor === option.value;
+              return (
+                <button
+                  key={option.value}
+                  className={`segmented-option ${isActive ? "is-active" : ""}`}
+                  type="button"
+                  aria-pressed={isActive}
+                  onClick={() => setForm((previous) => ({ ...previous, quality_floor: option.value }))}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="task-actions">
+          <button className="submit-button" type="submit" disabled={isRunning}>
+            Run
+          </button>
+          {canStop ? (
+            <button className="stop-button" type="button" onClick={onStop} disabled={isStopping}>
+              Stop
+            </button>
+          ) : null}
         </div>
       </div>
 
-      <p className="field-help task-estimate">
-        ~{charCount} chars · Est. {estimatedSubtasks} subtasks · ~$
-        {formatUsdRange(lowEstimate)}–${formatUsdRange(highEstimate)}
-      </p>
-
-      <button className="submit-button" type="submit" disabled={isRunning}>
-        {isRunning ? "Running orchestration..." : "Launch run"}
-      </button>
+      {charCount > 0 ? (
+        <p className="field-help task-estimate">
+          ${formatUsdRange(lowEstimate)}–${formatUsdRange(highEstimate)}
+        </p>
+      ) : null}
     </form>
   );
 }
